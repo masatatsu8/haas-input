@@ -12,7 +12,7 @@ struct HaasInputApp: App {
     }
 
     var body: some Scene {
-        WindowGroup(HaasAppConfiguration.name, id: HaasAppConfiguration.mainWindowID) {
+        Window(HaasAppConfiguration.name, id: HaasAppConfiguration.mainWindowID) {
             HaasRootView(app: app)
                 .environment(\.locale, Locale(identifier: "ja_JP"))
                 .onAppear { appDelegate.appModel = app }

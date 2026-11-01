@@ -107,7 +107,7 @@ open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibil
 
 Haas辞書はアプリの設定 (`com.tatsumi.VoiceInkHaas`のUserDefaults) に保存します。別のMacへ移すときは、「辞書」の書き出しと読み込みを使ってください。
 
-「設定」の「履歴の保存期間」で、古い履歴や録音ファイルを自動で削除できます。削除した録音はゴミ箱へ移します。
+新しくインストールした場合の既定では、7日を過ぎた履歴と録音を録音終了後に自動で削除します。0.1.0以前から使っていて、この設定を変えていない場合は、従来どおり自動で削除しない設定を引き継ぎます。期間の変更や自動削除の停止は、「設定」の「履歴の保存期間」で行えます。削除した録音はゴミ箱へ移します。入力確認待ちの文章は、確認が終わるまで残ります。
 
 bundle IDの`com.tatsumi.VoiceInkHaas`は、前身の「VoiceInk Haas」のデータを引き継ぐために維持しています。
 

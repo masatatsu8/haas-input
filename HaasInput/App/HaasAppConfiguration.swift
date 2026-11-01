@@ -10,6 +10,9 @@ enum HaasAppConfiguration {
     static let mainWindowID = "haas-main"
 
     static func prepare() {
+        CleanupDefaultsMigration.persistInitialCleanupDefaults(storageDirectory: FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(AppStorageIdentity.applicationSupportDirectoryName, isDirectory: true))
         UserDefaults.standard.register(defaults: [
             "clipboardRestoreDelay": 2.0,
             "isSystemMuteEnabled": true,
@@ -17,8 +20,8 @@ enum HaasAppConfiguration {
             "isPauseMediaEnabled": false,
             "RecorderType": "mini",
             RecorderDisplaySettingsKeys.showLiveTranscript: true,
-            CleanupSettingsKeys.isTranscriptionCleanupEnabled: false,
-            CleanupSettingsKeys.transcriptionRetentionMinutes: 1440,
+            CleanupSettingsKeys.isTranscriptionCleanupEnabled: true,
+            CleanupSettingsKeys.transcriptionRetentionMinutes: 10080,
             CleanupSettingsKeys.isAudioCleanupEnabled: false,
             CleanupSettingsKeys.audioRetentionPeriod: 7,
             AppAppearancePreference.userDefaultsKey: AppAppearancePreference.system.rawValue,

@@ -41,8 +41,8 @@ private struct HaasGeneralSettingsView: View {
     @AppStorage(RecorderDisplaySettingsKeys.showLiveTranscript) private var showLiveTranscript = true
     @AppStorage("clipboardRestoreDelay") private var clipboardRestoreDelay = 2.0
     @AppStorage(AppAppearancePreference.userDefaultsKey) private var appearance = AppAppearancePreference.system
-    @AppStorage(CleanupSettingsKeys.isTranscriptionCleanupEnabled) private var transcriptCleanup = false
-    @AppStorage(CleanupSettingsKeys.transcriptionRetentionMinutes) private var transcriptRetention = 1440
+    @AppStorage(CleanupSettingsKeys.isTranscriptionCleanupEnabled) private var transcriptCleanup = true
+    @AppStorage(CleanupSettingsKeys.transcriptionRetentionMinutes) private var transcriptRetention = 10080
     @AppStorage(CleanupSettingsKeys.isAudioCleanupEnabled) private var audioCleanup = false
     @AppStorage(CleanupSettingsKeys.audioRetentionPeriod) private var audioRetention = 7
     @State private var punctuationAvailability = ""

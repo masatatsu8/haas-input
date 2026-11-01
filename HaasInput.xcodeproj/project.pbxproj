@@ -163,6 +163,7 @@
 		9C439D69E64897C1102EC401 /* HaasInputTestHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AF8E1CC53EBB0CC492116D9 /* HaasInputTestHostApp.swift */; };
 		9D9C0E8653A23130CFB067D6 /* HaasHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4EA8A0DDEF48AFE63512980 /* HaasHistoryView.swift */; };
 		9DDC693045BB9BE2B33704C2 /* SoundPlaybackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EB14632D6747FABBFD48E33 /* SoundPlaybackEngine.swift */; };
+		9E100F7C1A05945A7BAB4E32 /* CleanupDefaultsMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 642E6FA4AB5899FF14837C94 /* CleanupDefaultsMigrationTests.swift */; };
 		9FEB27804E3F151DFA309B26 /* FoundationModels.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 71DE770EE321BE66DFEEC5BC /* FoundationModels.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 		A0961D7784B08775BD825725 /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1669B96CD439EE39470DF536 /* AudioDeviceManager.swift */; };
 		A468387D82111555B1842BDF /* sound2.wav in Resources */ = {isa = PBXBuildFile; fileRef = 0A77F5A0ADCDD5FA44807E26 /* sound2.wav */; };
@@ -364,6 +365,7 @@
 		5D7800D8166F933E3F798C4B /* CustomSoundManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomSoundManager.swift; sourceTree = "<group>"; };
 		6137BB0B5AA89F13F5DEA39B /* RecordingShortcutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingShortcutManager.swift; sourceTree = "<group>"; };
 		6282B7F34242528A912E2155 /* ClipboardManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardManager.swift; sourceTree = "<group>"; };
+		642E6FA4AB5899FF14837C94 /* CleanupDefaultsMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupDefaultsMigrationTests.swift; sourceTree = "<group>"; };
 		64F68AF12D120E819F86EA8F /* HaasSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasSettingsStore.swift; sourceTree = "<group>"; };
 		652681F45F8EC5FDD3D0723C /* ShortcutRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutRecorder.swift; sourceTree = "<group>"; };
 		66CCBAD54586A43D3C1263CA /* HaasHistoryMaintenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasHistoryMaintenance.swift; sourceTree = "<group>"; };
@@ -652,6 +654,7 @@
 		A313AA1B0F56E6B8E138A95C /* VoiceInkTests */ = {
 			isa = PBXGroup;
 			children = (
+				642E6FA4AB5899FF14837C94 /* CleanupDefaultsMigrationTests.swift */,
 				2E976D7F222A4FC74EFF6A6A /* CursorPasterClipboardTests.swift */,
 				BC523E0C12580B887B6DD167 /* Fixtures */,
 				53A761276000597567255A3E /* HaasDeliveryTests.swift */,
@@ -1105,6 +1108,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9E100F7C1A05945A7BAB4E32 /* CleanupDefaultsMigrationTests.swift in Sources */,
 				84BDD3968770027083C107E6 /* CursorPasterClipboardTests.swift in Sources */,
 				5A29E738783B53A9ACAC5726 /* HaasDeliveryTests.swift in Sources */,
 				30E0469C3621D8A2EE8FF26C /* HaasHistoryPresentationTests.swift in Sources */,
@@ -1351,7 +1355,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 226;
+				CURRENT_PROJECT_VERSION = 227;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_LANGUAGE = ja;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1371,7 +1375,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.1.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -1418,7 +1422,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 226;
+				CURRENT_PROJECT_VERSION = 227;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_LANGUAGE = ja;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -1432,7 +1436,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.1.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
