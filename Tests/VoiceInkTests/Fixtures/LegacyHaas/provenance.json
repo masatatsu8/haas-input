@@ -1,0 +1,46 @@
+{
+  "oldRef": "a3bc288cc9a643aa0dc9dae3570d3c5e588d679b",
+  "moduleName": "VoiceInk",
+  "counts": {
+    "Transcription": 3,
+    "VocabularyWord": 2,
+    "WordReplacement": 2,
+    "SessionMetric": 2
+  },
+  "disabledWordReplacementPreserved": true,
+  "oldReaderValuesMatchExplicitFixture": true,
+  "sourceFiles": {
+    "ref": "a3bc288cc9a643aa0dc9dae3570d3c5e588d679b",
+    "moduleName": "VoiceInk",
+    "files": {
+      "VoiceInk/Infrastructure/Persistence/Models/Transcription.swift": {
+        "sha256": "047d703daa7acc1a3aafed5f9248ecc9c8ae0216abffba33c6d54365b9e5ef37",
+        "bytes": 2843
+      },
+      "VoiceInk/Infrastructure/Persistence/Models/VocabularyWord.swift": {
+        "sha256": "b90fbd19b9b5f8e1a99a2388c0429bbe3fcfa3ca278f9c0e7e8aabc39751684b",
+        "bytes": 251
+      },
+      "VoiceInk/Infrastructure/Persistence/Models/WordReplacement.swift": {
+        "sha256": "d136a61574711729aeff22ce722d5509ab3db30c63b424e128e6272b1bbb0c27",
+        "bytes": 732
+      },
+      "VoiceInk/Infrastructure/Persistence/Models/SessionMetric.swift": {
+        "sha256": "f72b80a7baf0638cae5ed8c715d26d4eeb325d2ffea6e67a11424204e9f4b2f3",
+        "bytes": 1644
+      }
+    },
+    "expectedSHA256": "9169758b570c42087051ca30fecf40e285a85dfe23fb76ddede31c646f00af8d"
+  },
+  "fixtureFilesSHA256": {
+    "expected.json": "9169758b570c42087051ca30fecf40e285a85dfe23fb76ddede31c646f00af8d",
+    "stores/default.store": "58a6cb583d9821a129030fa5bbda576f8eef06d4682bc374861dba6358063a31",
+    "stores/stats.store": "c137c752e819e4e29963717627a8720136bbb7e25f69767beac53aa66d647f3d",
+    "stores/dictionary.store": "4d59f1a1a2cb90e6d3b6f08bc59c98937a6147f41f4a2ed4a94c37f76552f5f1",
+    "generation/VocabularyWord.swift": "b90fbd19b9b5f8e1a99a2388c0429bbe3fcfa3ca278f9c0e7e8aabc39751684b",
+    "generation/FixtureRunner.swift": "6dac684c3507197f96295c4860ae40687524b27044c8cc526ccaa35771ac4433",
+    "generation/WordReplacement.swift": "d136a61574711729aeff22ce722d5509ab3db30c63b424e128e6272b1bbb0c27",
+    "generation/SessionMetric.swift": "f72b80a7baf0638cae5ed8c715d26d4eeb325d2ffea6e67a11424204e9f4b2f3",
+    "generation/Transcription.swift": "047d703daa7acc1a3aafed5f9248ecc9c8ae0216abffba33c6d54365b9e5ef37"
+  }
+}

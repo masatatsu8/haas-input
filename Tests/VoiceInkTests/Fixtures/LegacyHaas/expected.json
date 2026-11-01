@@ -1,0 +1,116 @@
+{
+  "Transcription": [
+    {
+      "id": "10000000-0000-0000-0000-000000000001",
+      "text": "旧履歴本文A",
+      "enhancedText": "旧整形本文A",
+      "timestamp": 1700000000.125,
+      "duration": 12.5,
+      "audioFileURL": "file:///synthetic-haas-audio/legacy-one.wav",
+      "transcriptionModelName": "Haas-ja Q8 (fixture)",
+      "aiEnhancementModelName": "Fixture AI",
+      "promptName": "Legacy prompt",
+      "transcriptionDuration": 1.25,
+      "enhancementDuration": 0.75,
+      "aiRequestSystemMessage": "合成systemメッセージ",
+      "aiRequestUserMessage": "合成userメッセージ",
+      "modeName": "旧モードA",
+      "modeEmoji": "🧪",
+      "transcriptionStatus": "completed"
+    },
+    {
+      "enhancedText": null,
+      "audioFileURL": null,
+      "transcriptionModelName": null,
+      "aiEnhancementModelName": null,
+      "promptName": null,
+      "transcriptionDuration": null,
+      "enhancementDuration": null,
+      "aiRequestSystemMessage": null,
+      "aiRequestUserMessage": null,
+      "modeName": null,
+      "modeEmoji": null,
+      "transcriptionStatus": "canceled",
+      "id": "10000000-0000-0000-0000-000000000002",
+      "text": "The transcription was canceled.",
+      "timestamp": 1700000100.5,
+      "duration": 0.4
+    },
+    {
+      "enhancedText": null,
+      "audioFileURL": null,
+      "transcriptionModelName": null,
+      "aiEnhancementModelName": null,
+      "promptName": null,
+      "transcriptionDuration": null,
+      "enhancementDuration": null,
+      "aiRequestSystemMessage": null,
+      "aiRequestUserMessage": null,
+      "modeName": null,
+      "modeEmoji": null,
+      "transcriptionStatus": null,
+      "id": "10000000-0000-0000-0000-000000000003",
+      "text": "状態未保存の旧履歴",
+      "timestamp": 1700000200.75,
+      "duration": 3.0
+    }
+  ],
+  "VocabularyWord": [
+    {
+      "word": "旧語彙A",
+      "dateAdded": 1700000300.125
+    },
+    {
+      "word": "旧語彙B",
+      "dateAdded": 1700000400.5
+    }
+  ],
+  "WordReplacement": [
+    {
+      "id": "20000000-0000-0000-0000-000000000001",
+      "originalText": "旧原語A",
+      "replacementText": "旧変換A",
+      "dateAdded": 1700000500.125,
+      "isEnabled": false
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000002",
+      "originalText": "旧原語B",
+      "replacementText": "旧変換B",
+      "dateAdded": 1700000600.5,
+      "isEnabled": true
+    }
+  ],
+  "SessionMetric": [
+    {
+      "id": "30000000-0000-0000-0000-000000000001",
+      "transcriptionId": "10000000-0000-0000-0000-000000000001",
+      "timestamp": 1700000000.125,
+      "source": "recorder",
+      "wordCount": 7,
+      "audioDuration": 12.5,
+      "transcriptionModelName": "Haas-ja Q8 (fixture)",
+      "transcriptionDuration": 1.25,
+      "speedFactor": 10.0,
+      "modeName": "旧モードA",
+      "aiEnhancementModelName": "Fixture AI",
+      "enhancementDuration": 0.75,
+      "enhancementEstimatedTokenCount": 23
+    },
+    {
+      "id": "30000000-0000-0000-0000-000000000002",
+      "transcriptionId": "10000000-0000-0000-0000-000000000002",
+      "timestamp": 1700000100.5,
+      "source": null,
+      "wordCount": 0,
+      "audioDuration": 0.4,
+      "transcriptionModelName": null,
+      "transcriptionDuration": null,
+      "speedFactor": null,
+      "modeName": null,
+      "aiEnhancementModelName": null,
+      "enhancementDuration": null,
+      "enhancementEstimatedTokenCount": null
+    }
+  ]
+}

@@ -1,0 +1,381 @@
+import XCTest
+@testable import VoiceInk
+
+@MainActor
+final class HaasInputDeliveryTests: XCTestCase {
+    func testUnresolvedSessionsAreArchivedWithoutBlockingOrMixingNewInput() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let first = UUID(), second = UUID(), current = UUID()
+        try await fixture.delivery.begin(sessionID: first, target: nil)
+        fixture.delivery.accept(sessionID: first, itemID: "item-1", text: "前の未入力文")
+        await fixture.delivery.finish(sessionID: first)
+        try await fixture.delivery.begin(sessionID: second, target: nil)
+        fixture.delivery.accept(sessionID: second, itemID: "item-1", text: "別の未入力文")
+        await fixture.delivery.finish(sessionID: second)
+        try await fixture.delivery.begin(sessionID: current, target: nil)
+
+        fixture.delivery.accept(sessionID: first, itemID: "late", text: "混ぜてはいけない文")
+        fixture.delivery.cancel(sessionID: first, message: "古い取消")
+        fixture.delivery.pause(sessionID: first, message: "古い失敗")
+        XCTAssertTrue(fixture.delivery.ledger.fullText.isEmpty)
+        XCTAssertEqual(Set(fixture.delivery.archivedRecoveries.map(\.id)), Set([first, second]))
+
+        fixture.delivery.accept(sessionID: current, itemID: "item-1", text: "今回の本文")
+        fixture.delivery.copyArchivedRecovery(id: first, kind: .pending)
+        XCTAssertEqual(fixture.paster.copiedTexts, ["前の未入力文"])
+        XCTAssertEqual(fixture.delivery.archivedRecoveries.count, 2)
+        fixture.delivery.acknowledgeArchivedRecovery(id: first)
+        XCTAssertEqual(fixture.delivery.archivedRecoveries.map(\.id), [second])
+        XCTAssertEqual(fixture.delivery.ledger.fullText, "今回の本文")
+        XCTAssertTrue(fixture.paster.calls.isEmpty)
+        await fixture.delivery.finish(sessionID: current)
+    }
+
+    func testRolloverWaitsForOldPasteResultAndDoesNotCancelNewOwner() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let oldID = UUID(), newID = UUID()
+        let started = expectation(description: "Actual output boundary reached")
+        fixture.paster.hold = true
+        fixture.paster.onStarted = { started.fulfill() }
+        try await fixture.delivery.begin(sessionID: oldID, target: AvailableInputTarget())
+        fixture.delivery.accept(sessionID: oldID, itemID: "item-1", text: "確認が必要な旧文")
+        await fulfillment(of: [started], timeout: 1)
+        XCTAssertEqual(try fixture.savedState().active?.ledger.segments.first?.disposition, .posting)
+
+        var didBegin = false
+        let next = Task { @MainActor in
+            try await fixture.delivery.begin(sessionID: newID, target: AvailableInputTarget())
+            didBegin = true
+        }
+        await waitUntil { fixture.paster.calls.first?.shouldPaste() == false }
+        XCTAssertFalse(didBegin)
+        XCTAssertTrue(fixture.delivery.archivedRecoveries.isEmpty)
+        fixture.delivery.cancel(sessionID: oldID, message: "遅い取消")
+        fixture.delivery.pause(sessionID: oldID, message: "遅い失敗")
+        fixture.paster.hold = false
+        fixture.paster.onStarted = nil
+        try fixture.paster.complete(index: 0, result: .commandPartiallyPosted)
+        try await next.value
+
+        XCTAssertEqual(fixture.delivery.archivedRecoveries.first?.id, oldID)
+        XCTAssertEqual(fixture.delivery.archivedRecoveries.first?.ledger.uncertainText, "確認が必要な旧文")
+        fixture.delivery.accept(sessionID: oldID, itemID: "late", text: "旧callback")
+        fixture.delivery.cancel(sessionID: oldID, message: "新録音を止めてはいけない")
+        fixture.delivery.accept(sessionID: newID, itemID: "item-1", text: "今回だけの文")
+        await fixture.delivery.finish(sessionID: newID)
+        XCTAssertEqual(fixture.paster.calls.map(\.text), ["確認が必要な旧文", "今回だけの文"])
+        XCTAssertEqual(fixture.delivery.ledger.fullText, "今回だけの文")
+        XCTAssertEqual(fixture.delivery.ledger.segments.first?.disposition, .posted)
+
+        let reopened = HaasInputDelivery(
+            store: HaasRecoveryStore(fileURL: fixture.fileURL, legacyDefaults: fixture.defaults),
+            textPaster: ControlledTextPaster()
+        )
+        XCTAssertEqual(reopened.archivedRecoveries.first?.id, oldID)
+        XCTAssertEqual(reopened.archivedRecoveries.first?.ledger.uncertainText, "確認が必要な旧文")
+    }
+
+    func testCancellationWhileBeginWaitsDoesNotPublishTheCancelledSession() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let oldID = UUID(), cancelledID = UUID(), nextID = UUID()
+        let started = expectation(description: "Old paste is in flight")
+        fixture.paster.hold = true
+        fixture.paster.onStarted = { started.fulfill() }
+        try await fixture.delivery.begin(sessionID: oldID, target: AvailableInputTarget())
+        fixture.delivery.accept(sessionID: oldID, itemID: "item-1", text: "旧文")
+        await fulfillment(of: [started], timeout: 1)
+        let cancelledBegin = Task { @MainActor in
+            try await fixture.delivery.begin(sessionID: cancelledID, target: nil)
+        }
+        await waitUntil { fixture.paster.calls.first?.shouldPaste() == false }
+        fixture.delivery.cancel(sessionID: cancelledID, message: "準備を取り消した")
+        try fixture.paster.complete(index: 0, result: .commandNotPosted)
+        do {
+            try await cancelledBegin.value
+            XCTFail("Cancelled begin must not publish a new active session")
+        } catch is CancellationError {}
+        XCTAssertEqual(fixture.delivery.pendingText, "旧文")
+        XCTAssertTrue(fixture.delivery.archivedRecoveries.isEmpty)
+
+        try await fixture.delivery.begin(sessionID: nextID, target: nil)
+        XCTAssertEqual(fixture.delivery.archivedRecoveries.first?.id, oldID)
+        XCTAssertTrue(fixture.delivery.ledger.fullText.isEmpty)
+        await fixture.delivery.finish(sessionID: nextID)
+    }
+
+    func testIncomingTextSurvivesSaveFailureAndNewBeginIsBlocked() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let id = UUID()
+        try await fixture.delivery.begin(sessionID: id, target: nil)
+        try fixture.breakStorageDirectory()
+        fixture.delivery.accept(sessionID: id, itemID: "item-1", text: "保存できなくても残す本文")
+        XCTAssertEqual(fixture.delivery.pendingText, "保存できなくても残す本文")
+        XCTAssertTrue(fixture.delivery.hasUnsavedRecovery)
+        XCTAssertTrue(fixture.paster.calls.isEmpty)
+        do {
+            try await fixture.delivery.begin(sessionID: UUID(), target: nil)
+            XCTFail("Unsaved text must not be replaced by a new session")
+        } catch {}
+        fixture.delivery.copyPending()
+        XCTAssertEqual(fixture.paster.copiedTexts, ["保存できなくても残す本文"])
+        XCTAssertEqual(fixture.delivery.pendingText, "保存できなくても残す本文")
+        await fixture.delivery.finish(sessionID: id)
+    }
+
+    func testPostingMustBeSavedBeforeAnyPasteCall() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let id = UUID()
+        try await fixture.delivery.begin(sessionID: id, target: AvailableInputTarget())
+        fixture.delivery.accept(sessionID: id, itemID: "item-1", text: "まだ送ってはいけない文")
+        try fixture.breakStorageDirectory()
+        await fixture.delivery.finish(sessionID: id)
+        XCTAssertTrue(fixture.paster.calls.isEmpty)
+        XCTAssertEqual(fixture.delivery.pendingText, "まだ送ってはいけない文")
+        XCTAssertTrue(fixture.delivery.hasUnsavedRecovery)
+    }
+
+    func testSessionSavesEachReceiptBeforeGenerationAndDeliversHeldHeadInOrder() async throws {
+        let fixture = try DeliveryFixture()
+        let generator = ControlledPunctuationGenerator()
+        let session = try makeSession(fixture, worker: HaasPunctuationWorker(generator: generator))
+        defer { session.cancel(); generator.cancelPending(); fixture.cleanUp() }
+        try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
+
+        session.receive(.committed(id: "first", text: "自販の資料です"))
+        XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, "JiHANの資料です")
+        XCTAssertEqual(session.recognizedText, "JiHANの資料です")
+        session.receive(.committed(id: "second", text: "続けます"))
+        XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, "JiHANの資料です続けます")
+        XCTAssertTrue(fixture.paster.calls.isEmpty)
+        await waitUntil { generator.requests.count == 1 }
+        XCTAssertEqual(generator.requests, ["JiHANの資料です"])
+
+        let exited = expectation(description: "Completed punctuation is consumed")
+        generator.onExited = { _ in exited.fulfill() }
+        try generator.complete(index: 0, result: .success("JiHANの資料です。"))
+        await fulfillment(of: [exited], timeout: 1)
+        await waitUntil { session.recognizedText == "JiHANの資料です。続けます" }
+        await fixture.delivery.finish(sessionID: session.sessionID)
+        XCTAssertEqual(fixture.paster.calls.map(\.text), ["JiHANの資料です。", "続けます"])
+        XCTAssertEqual(session.recognizedText, "JiHANの資料です。続けます")
+        XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, session.recognizedText)
+
+        session.receive(.committed(id: "first", text: "自販の資料です"))
+        XCTAssertEqual(generator.requests.count, 1)
+        XCTAssertEqual(fixture.paster.calls.count, 2)
+    }
+
+    func testCanceledOrFailedFormattingDoesNotDelayOrChangeTheNextSession() async throws {
+        for recognitionFailed in [false, true] {
+            let fixture = try DeliveryFixture()
+            let generator = ControlledPunctuationGenerator()
+            let worker = HaasPunctuationWorker(generator: generator)
+            let old = try makeSession(fixture, worker: worker)
+            let next = try makeSession(fixture, worker: worker)
+            defer { old.cancel(); next.cancel(); generator.cancelPending(); fixture.cleanUp() }
+            try await fixture.delivery.begin(sessionID: old.sessionID, target: AvailableInputTarget())
+            old.receive(.committed(id: "item-1", text: "前の資料です"))
+            await waitUntil { generator.requests.count == 1 }
+            if recognitionFailed { old.receive(.error(URLError(.networkConnectionLost))) }
+            else { old.cancel() }
+            XCTAssertEqual(try fixture.savedState().active?.ledger.pendingText, "前の資料です")
+            XCTAssertEqual(old.recognizedText, "前の資料です")
+
+            try await fixture.delivery.begin(sessionID: next.sessionID, target: AvailableInputTarget())
+            next.receive(.committed(id: "item-1", text: "今回の資料です"))
+            await fixture.delivery.finish(sessionID: next.sessionID)
+            XCTAssertEqual(generator.requests.count, 1, "The canceled native request still owns the generation slot")
+            XCTAssertEqual(fixture.paster.calls.map(\.text), ["今回の資料です"])
+            XCTAssertEqual(next.recognizedText, "今回の資料です")
+            XCTAssertEqual(fixture.delivery.archivedRecoveries.first?.ledger.pendingText, "前の資料です")
+
+            let exited = expectation(description: "Old native result arrives after the next recording")
+            generator.onExited = { _ in exited.fulfill() }
+            try generator.complete(index: 0, result: .success("前の資料です。"))
+            await fulfillment(of: [exited], timeout: 1)
+            XCTAssertEqual(old.recognizedText, "前の資料です")
+            XCTAssertEqual(next.recognizedText, "今回の資料です")
+            XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, "今回の資料です")
+            XCTAssertEqual(fixture.delivery.archivedRecoveries.first?.ledger.fullText, "前の資料です")
+            XCTAssertEqual(fixture.paster.calls.count, 1)
+        }
+    }
+
+    func testCopyWinsOverLateFormattingAndKeepsSessionHistoryIdentical() async throws {
+        let fixture = try DeliveryFixture()
+        let generator = ControlledPunctuationGenerator()
+        let session = try makeSession(fixture, worker: HaasPunctuationWorker(generator: generator))
+        defer { session.cancel(); generator.cancelPending(); fixture.cleanUp() }
+        try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
+        session.receive(.committed(id: "item-1", text: "コピーする資料です"))
+        await waitUntil { generator.requests.count == 1 }
+        fixture.delivery.copyPending()
+        XCTAssertEqual(fixture.paster.copiedTexts, ["コピーする資料です"])
+        XCTAssertEqual(try fixture.savedState().active?.ledger.segments.first?.disposition, .copied)
+
+        let exited = expectation(description: "AI finishes after manual copy")
+        generator.onExited = { _ in exited.fulfill() }
+        try generator.complete(index: 0, result: .success("コピーする資料です。"))
+        await fulfillment(of: [exited], timeout: 1)
+        XCTAssertEqual(session.recognizedText, "コピーする資料です")
+        XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, session.recognizedText)
+        XCTAssertTrue(fixture.paster.calls.isEmpty)
+    }
+
+    func testFormattingSaveFailurePreservesTheDurableBaseAndStopsInput() async throws {
+        let fixture = try DeliveryFixture()
+        let generator = ControlledPunctuationGenerator()
+        let session = try makeSession(fixture, worker: HaasPunctuationWorker(generator: generator))
+        defer { session.cancel(); generator.cancelPending(); fixture.cleanUp() }
+        try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
+        session.receive(.committed(id: "item-1", text: "保存してから整えます"))
+        await waitUntil { generator.requests.count == 1 }
+        try fixture.breakStorageDirectory()
+
+        let exited = expectation(description: "Formatting save fails")
+        generator.onExited = { _ in exited.fulfill() }
+        try generator.complete(index: 0, result: .success("保存してから整えます。"))
+        await fulfillment(of: [exited], timeout: 1)
+        await waitUntil { fixture.delivery.hasUnsavedRecovery }
+        XCTAssertTrue(fixture.delivery.hasUnsavedRecovery)
+        XCTAssertEqual(session.recognizedText, "保存してから整えます")
+        XCTAssertEqual(fixture.delivery.pendingText, session.recognizedText)
+        XCTAssertTrue(fixture.paster.calls.isEmpty)
+        fixture.delivery.copyPending()
+        XCTAssertEqual(fixture.paster.copiedTexts, ["保存してから整えます"])
+        let retained = try JSONDecoder().decode(HaasRecoveryState.self, from: Data(contentsOf:
+            fixture.root.appendingPathComponent("retained-storage/state.json")))
+        XCTAssertEqual(retained.active?.ledger.pendingText, session.recognizedText)
+    }
+
+    func testFormattingCannotRewritePostingUncertainOrAcknowledgedInput() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let sessionID = UUID(), requestID = UUID()
+        let started = expectation(description: "Finalized text reaches paste boundary")
+        fixture.paster.hold = true
+        fixture.paster.onStarted = { started.fulfill() }
+        try await fixture.delivery.begin(sessionID: sessionID, target: AvailableInputTarget())
+        XCTAssertTrue(fixture.delivery.accept(
+            sessionID: sessionID, itemID: "item-1", text: "確認します", formattingHoldID: requestID
+        ))
+        XCTAssertTrue(fixture.delivery.completeHeldFormatting(
+            sessionID: sessionID, itemID: "item-1", requestID: requestID, text: "確認します。"
+        ))
+        await fulfillment(of: [started], timeout: 1)
+        XCTAssertFalse(fixture.delivery.completeHeldFormatting(
+            sessionID: sessionID, itemID: "item-1", requestID: requestID, text: "後から変更"
+        ))
+        try fixture.paster.complete(index: 0, result: .commandPartiallyPosted)
+        await waitUntil { fixture.delivery.uncertainText == "確認します。" }
+        XCTAssertEqual(fixture.delivery.uncertainText, "確認します。")
+        XCTAssertFalse(fixture.delivery.completeHeldFormatting(
+            sessionID: sessionID, itemID: "item-1", requestID: requestID, text: "後から変更"
+        ))
+        fixture.delivery.acknowledgeUncertainInput()
+        XCTAssertEqual(fixture.delivery.ledger.segments.first?.disposition, .copied)
+        XCTAssertFalse(fixture.delivery.completeHeldFormatting(
+            sessionID: sessionID, itemID: "item-1", requestID: requestID, text: "後から変更"
+        ))
+        XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, "確認します。")
+        await fixture.delivery.finish(sessionID: sessionID)
+    }
+
+    private func makeSession(_ fixture: DeliveryFixture, worker: HaasPunctuationWorker) throws -> HaasDictationSession {
+        let replacements = try WordReplacementPlan(records: [
+            .init(id: UUID(), originalText: "自販", replacementText: "JiHAN", dateAdded: Date()),
+            .init(id: UUID(), originalText: "JiHAN", replacementText: "二度目の置換", dateAdded: Date()),
+        ])
+        return HaasDictationSession(
+            runtime: .bundled(directory: fixture.root), words: "", inputTarget: nil, onPartialTranscript: nil,
+            replacementPlan: replacements, punctuationMode: .natural, punctuationWorker: worker, delivery: fixture.delivery
+        )
+    }
+
+    private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while !condition(), ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(condition())
+    }
+}
+
+@MainActor
+private final class DeliveryFixture {
+    let root: URL
+    let fileURL: URL
+    let defaults: UserDefaults
+    let suite: String
+    let paster = ControlledTextPaster()
+    let delivery: HaasInputDelivery
+
+    init() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("haas-delivery-\(UUID().uuidString)")
+        fileURL = root.appendingPathComponent("storage/state.json")
+        suite = "HaasDeliveryTests.\(UUID().uuidString)"
+        defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        delivery = HaasInputDelivery(
+            store: HaasRecoveryStore(fileURL: fileURL, legacyDefaults: defaults), textPaster: paster
+        )
+    }
+
+    func savedState() throws -> HaasRecoveryState {
+        try JSONDecoder().decode(HaasRecoveryState.self, from: Data(contentsOf: fileURL))
+    }
+
+    func breakStorageDirectory() throws {
+        let storage = fileURL.deletingLastPathComponent()
+        try FileManager.default.moveItem(at: storage, to: root.appendingPathComponent("retained-storage"))
+        try Data("not a directory".utf8).write(to: storage)
+    }
+
+    func cleanUp() {
+        defaults.removePersistentDomain(forName: suite)
+        try? FileManager.default.removeItem(at: root)
+    }
+}
+
+@MainActor
+private struct AvailableInputTarget: HaasInputTargetChecking {
+    let diagnosticAppIdentifier = "test.destination"
+    func rejectionReason() -> String? { nil }
+}
+
+@MainActor
+private final class ControlledTextPaster: HaasTextPasting {
+    struct Call {
+        let text: String
+        let shouldPaste: () -> Bool
+    }
+    var hold = false
+    var onStarted: (() -> Void)?
+    private(set) var calls: [Call] = []
+    private(set) var copiedTexts: [String] = []
+    private var continuations: [Int: CheckedContinuation<CursorPaster.PasteOutcome, Never>] = [:]
+
+    func paste(_ text: String, shouldPaste: @escaping () -> Bool) async -> CursorPaster.PasteOutcome {
+        let index = calls.count
+        calls.append(Call(text: text, shouldPaste: shouldPaste))
+        onStarted?()
+        if hold {
+            return await withCheckedContinuation { continuations[index] = $0 }
+        }
+        return CursorPaster.PasteOutcome(result: .commandPosted)
+    }
+
+    func copy(_ text: String) -> Bool {
+        copiedTexts.append(text)
+        return true
+    }
+
+    func complete(index: Int, result: CursorPaster.PasteResult) throws {
+        let continuation = try XCTUnwrap(continuations.removeValue(forKey: index))
+        continuation.resume(returning: CursorPaster.PasteOutcome(result: result))
+    }
+}

@@ -1,0 +1,13 @@
+.DS_Store
+.haas-build/
+.local-dependencies/
+output/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+.build/
+*.hmap
+*.profraw
+*.dSYM/
+build/
