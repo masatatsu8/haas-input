@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import QuartzCore
 import SwiftUI
 
 enum RecorderPanelStyle: String, CaseIterable, Identifiable {
@@ -8,8 +9,8 @@ enum RecorderPanelStyle: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .notch: "画面上部"
-        case .mini: "小さなパネル"
+        case .notch: "ノッチ (画面上部)"
+        case .mini: "ミニ (画面下部)"
         }
     }
 
@@ -31,19 +32,33 @@ final class HaasRecorderPresentation: ObservableObject {
 
     private let engine: HaasEngine
     private var panel: HaasRecorderPanel?
+    private var displayContext: HaasRecorderDisplayContext?
+    private var screenSubscription: AnyCancellable?
+    private var metrics: HaasRecorderSurfaceMetrics?
     private var presentationID = UUID()
-    private var lifecycleSubscription: AnyCancellable?
+    private var subscriptions = Set<AnyCancellable>()
 
     init(engine: HaasEngine) {
         self.engine = engine
-        lifecycleSubscription = LifecycleObserver.shared.publisher(
-            for: [.systemDidWake, .displaysDidWake, .screenConfigurationChanged]
-        )
-        .receive(on: RunLoop.main)
-        .sink { [weak self] _ in
-            guard let self, self.isRecorderPanelVisible else { return }
-            self.rebuild()
-        }
+        LifecycleObserver.shared.publisher(for: [.systemDidWake, .displaysDidWake, .screenConfigurationChanged])
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.isRecorderPanelVisible else { return }
+                self.rebuild()
+            }
+            .store(in: &subscriptions)
+
+        let layoutChanges = [
+            engine.$partialTranscript.map { _ in () }.eraseToAnyPublisher(),
+            engine.$errorMessage.map { _ in () }.eraseToAnyPublisher(),
+            engine.$hasUnsavedHistory.map { _ in () }.eraseToAnyPublisher(),
+            engine.inputDelivery.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).map { _ in () }.eraseToAnyPublisher(),
+        ]
+        Publishers.MergeMany(layoutChanges)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refreshLayout() }
+            .store(in: &subscriptions)
     }
 
     func recordingStateDidChange(_ state: RecordingState) {
@@ -53,9 +68,11 @@ final class HaasRecorderPresentation: ObservableObject {
             rebuild()
         case .recording, .transcribing, .busy:
             if panel == nil { rebuild() }
+            else { refreshLayout() }
         case .idle:
-            if engine.inputDelivery.hasRecovery || engine.hasUnsavedHistory || engine.errorMessage != nil {
+            if viewState.mode == .attention {
                 if panel == nil { rebuild() }
+                else { refreshLayout() }
             } else {
                 hide()
             }
@@ -78,13 +95,30 @@ final class HaasRecorderPresentation: ObservableObject {
     }
 
     func hide() {
+        screenSubscription = nil
         panel?.orderOut(nil)
         panel?.close()
         panel = nil
+        displayContext = nil
+        metrics = nil
         isRecorderPanelVisible = false
     }
 
+    private var viewState: HaasRecorderViewState {
+        HaasRecorderViewState(
+            recordingState: engine.recordingState,
+            duration: engine.recordedDuration,
+            transcript: engine.partialTranscript,
+            showsTranscript: UserDefaults.standard.object(forKey: RecorderDisplaySettingsKeys.showLiveTranscript) as? Bool ?? true,
+            errorMessage: engine.errorMessage,
+            hasUnsavedHistory: engine.hasUnsavedHistory,
+            recovery: HaasPendingInputState(delivery: engine.inputDelivery,
+                canResume: engine.recordingState == .idle || engine.recordingState == .recording)
+        )
+    }
+
     private func rebuild() {
+        screenSubscription = nil
         panel?.orderOut(nil)
         panel?.close()
         panel = nil
@@ -92,18 +126,104 @@ final class HaasRecorderPresentation: ObservableObject {
             isRecorderPanelVisible = false
             return
         }
-        let size = NSSize(width: 440, height: 380)
-        let area = screen.visibleFrame
-        let y = recorderPanelStyle == .mini ? area.minY + 18 : area.maxY - size.height - 8
-        let rect = NSRect(x: area.midX - size.width / 2, y: y, width: size.width, height: size.height)
-        let panel = HaasRecorderPanel(contentRect: rect)
-        panel.level = recorderPanelStyle == .mini ? .floating : .statusBar
-        let content = HaasRecorderPanelView(engine: engine, onClose: { [weak self] in self?.close() })
-            .frame(width: size.width, height: size.height, alignment: recorderPanelStyle == .mini ? .bottom : .top)
+        let placement = HaasRecorderPlacement(screen: screen)
+        let displayContext = HaasRecorderDisplayContext(placement: placement)
+        let metrics = placement.metrics(state: viewState, style: recorderPanelStyle)
+        let panel = HaasRecorderPanel(contentRect: placement.frame(metrics: metrics, style: recorderPanelStyle), style: recorderPanelStyle)
+        let content = HaasRecorderPanelView(
+            engine: engine, style: recorderPanelStyle, displayContext: displayContext,
+            onClose: { [weak self] in self?.close() }
+        )
         panel.contentView = NSHostingView(rootView: content)
-        panel.orderFrontRegardless()
         self.panel = panel
+        self.displayContext = displayContext
+        self.metrics = metrics
+        screenSubscription = NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification, object: panel)
+            .receive(on: RunLoop.main)
+            .sink { [weak self, weak panel] _ in
+                guard let self, self.panel === panel else { return }
+                self.refreshLayout()
+            }
+        panel.orderFrontRegardless()
         isRecorderPanelVisible = true
+    }
+
+    private func refreshLayout() {
+        guard isRecorderPanelVisible, let panel, let displayContext else { return }
+        var placement = displayContext.placement
+        if recorderPanelStyle == .mini, let screen = panel.screen {
+            placement = HaasRecorderPlacement(screen: screen)
+        }
+        let displayChanged = placement != displayContext.placement
+        if displayChanged { displayContext.placement = placement }
+        let state = viewState
+        if state.recordingState == .idle, state.mode != .attention {
+            hide()
+            return
+        }
+        let next = placement.metrics(state: state, style: recorderPanelStyle)
+        guard next != metrics else { return }
+        metrics = next
+        let frame = placement.frame(metrics: next, style: recorderPanelStyle,
+                                    preservingMiniOrigin: recorderPanelStyle == .mini ? panel.frame : nil)
+        if displayChanged || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            panel.setFrame(frame, display: true)
+        } else {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.18
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().setFrame(frame, display: true)
+            }
+        }
+    }
+}
+
+@MainActor
+private final class HaasRecorderDisplayContext: ObservableObject {
+    @Published var placement: HaasRecorderPlacement
+
+    init(placement: HaasRecorderPlacement) {
+        self.placement = placement
+    }
+}
+
+private struct HaasRecorderPlacement: Equatable {
+    let screenFrame: CGRect
+    let visibleFrame: CGRect
+    let notchWidth: CGFloat
+    let notchHeight: CGFloat
+    let hasPhysicalNotch: Bool
+
+    @MainActor init(screen: NSScreen) {
+        screenFrame = screen.frame
+        visibleFrame = screen.visibleFrame
+        if screen.safeAreaInsets.top > 0,
+           let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
+            notchWidth = max(0, screen.frame.width - left.width - right.width)
+            notchHeight = screen.safeAreaInsets.top
+            hasPhysicalNotch = true
+        } else {
+            notchWidth = 120
+            notchHeight = max(24, NSStatusBar.system.thickness)
+            hasPhysicalNotch = false
+        }
+    }
+
+    func metrics(state: HaasRecorderViewState, style: RecorderPanelStyle) -> HaasRecorderSurfaceMetrics {
+        HaasRecorderSurfaceMetrics(state: state, style: style, notchWidth: notchWidth,
+                                   notchHeight: notchHeight, maximumWidth: screenFrame.width - 24)
+    }
+
+    func frame(metrics: HaasRecorderSurfaceMetrics, style: RecorderPanelStyle, preservingMiniOrigin old: CGRect? = nil) -> CGRect {
+        let size = CGSize(width: metrics.width + 16, height: metrics.height + (style == .mini ? 16 : 10))
+        if style == .notch {
+            return CGRect(x: screenFrame.midX - size.width / 2, y: screenFrame.maxY - size.height,
+                          width: size.width, height: size.height)
+        }
+        let center = old?.midX ?? visibleFrame.midX
+        let x = min(max(visibleFrame.minX + 8, center - size.width / 2), visibleFrame.maxX - size.width - 8)
+        let y = min(max(visibleFrame.minY + 8, old?.minY ?? visibleFrame.minY + 18), visibleFrame.maxY - size.height - 8)
+        return CGRect(origin: CGPoint(x: x, y: y), size: size)
     }
 }
 
@@ -111,15 +231,22 @@ private final class HaasRecorderPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    init(contentRect: NSRect) {
-        super.init(contentRect: contentRect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    init(contentRect: NSRect, style: RecorderPanelStyle) {
+        let mask: NSWindow.StyleMask = style == .notch
+            ? [.borderless, .nonactivatingPanel, .fullSizeContentView]
+            : [.borderless, .nonactivatingPanel]
+        super.init(contentRect: contentRect, styleMask: mask, backing: .buffered, defer: false)
         isFloatingPanel = true
+        becomesKeyOnlyIfNeeded = true
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        level = style == .mini ? .floating : NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 3)
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false
+        isMovable = style == .mini
+        isMovableByWindowBackground = style == .mini
         appearance = NSAppearance(named: .darkAqua)
     }
 }
@@ -129,115 +256,48 @@ private struct HaasRecorderPanelView: View {
     @ObservedObject var engine: HaasEngine
     @ObservedObject private var delivery: HaasInputDelivery
     @AppStorage(RecorderDisplaySettingsKeys.showLiveTranscript) private var showLiveTranscript = true
+    let style: RecorderPanelStyle
+    @ObservedObject private var displayContext: HaasRecorderDisplayContext
     let onClose: () -> Void
 
-    init(engine: HaasEngine, onClose: @escaping () -> Void) {
+    private var placement: HaasRecorderPlacement { displayContext.placement }
+
+    init(engine: HaasEngine, style: RecorderPanelStyle, displayContext: HaasRecorderDisplayContext, onClose: @escaping () -> Void) {
         self.engine = engine
         _delivery = ObservedObject(wrappedValue: engine.inputDelivery)
+        self.style = style
+        _displayContext = ObservedObject(wrappedValue: displayContext)
         self.onClose = onClose
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                if engine.recordingState == .recording {
-                    Circle().fill(.red).frame(width: 8, height: 8)
-                } else if engine.recordingState != .idle {
-                    ProgressView().controlSize(.small)
-                }
-                Text(engine.recordingState.displayName).font(.headline)
-                Spacer()
-                Text(durationText).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                Button(action: onClose) { Image(systemName: "xmark") }
-                    .buttonStyle(.plain)
-                    .help(engine.recordingState == .idle ? "パネルを閉じる" : "録音を取り消して閉じる")
-                    .accessibilityLabel(engine.recordingState == .idle ? "パネルを閉じる" : "録音を取り消して閉じる")
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .layoutPriority(1)
-            if engine.recordingState == .recording {
-                HaasAudioMeterView(engine: engine)
-            }
-            ScrollViewReader { reader in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if showLiveTranscript, !engine.partialTranscript.isEmpty {
-                            Text(verbatim: engine.partialTranscript)
-                                .font(.body)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Color.clear.frame(height: 1).id("latest")
-                        } else if engine.recordingState == .recording {
-                            Text("話した内容を認識しています…")
-                                .font(.callout).foregroundStyle(.secondary)
-                        }
-                        if let error = engine.errorMessage {
-                            Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
-                        }
-                        if engine.hasUnsavedHistory {
-                            HStack {
-                                Button("保存を再試行") { engine.retrySavingHistory() }
-                                Button("文章をコピー") { engine.copyLastTranscription() }
-                            }
-                        }
-                        if delivery.hasRecovery {
-                            HaasPendingInputView(
-                                delivery: delivery,
-                                canResume: engine.recordingState == .idle || engine.recordingState == .recording
-                            )
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 220)
-                .onChange(of: engine.partialTranscript) { _, _ in
-                    guard !delivery.hasRecovery, engine.errorMessage == nil, !engine.hasUnsavedHistory else { return }
-                    reader.scrollTo("latest", anchor: .bottom)
-                }
-            }
-            if engine.recordingState == .recording {
-                HStack {
-                    Button("取り消す") { Task { await engine.cancelRecording() } }
-                    Spacer()
-                    Button("録音を終了") { Task { await engine.toggleRecording() } }
-                        .buttonStyle(.borderedProminent)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .layoutPriority(1)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.12)) }
-        .environment(\.colorScheme, .dark)
-        .environment(\.locale, Locale(identifier: "ja_JP"))
-        .padding(6)
-    }
-
-    private var durationText: String {
-        let seconds = max(0, Int(engine.recordedDuration))
-        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
-    }
-}
-
-@MainActor
-private struct HaasAudioMeterView: View {
-    let engine: HaasEngine
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 0.05)) { context in
-            let level = max(0, min(1, engine.recorder.audioMeterSnapshot().averagePower))
-            HStack(alignment: .center, spacing: 3) {
-                ForEach(0..<18) { index in
-                    let wave = 0.45 + 0.55 * abs(sin(context.date.timeIntervalSinceReferenceDate * 8 + Double(index) * 0.45))
-                    Capsule().fill(.mint)
-                        .frame(width: 3, height: max(3, 24 * CGFloat(Double(level) * wave)))
-                }
-                Spacer()
-            }
-            .frame(height: 26)
-        }
-        .accessibilityHidden(true)
+        HaasRecorderSurface(
+            state: HaasRecorderViewState(
+                recordingState: engine.recordingState, duration: engine.recordedDuration,
+                transcript: engine.partialTranscript, showsTranscript: showLiveTranscript,
+                errorMessage: engine.errorMessage, hasUnsavedHistory: engine.hasUnsavedHistory,
+                recovery: HaasPendingInputState(delivery: delivery,
+                    canResume: engine.recordingState == .idle || engine.recordingState == .recording)
+            ),
+            style: style, notchWidth: placement.notchWidth, notchHeight: placement.notchHeight,
+            hasPhysicalNotch: placement.hasPhysicalNotch, maximumWidth: placement.screenFrame.width - 24,
+            audioMeterProvider: engine.recorder.audioMeterSnapshot,
+            actions: HaasRecorderActions(
+                close: onClose,
+                stop: { Task { await engine.toggleRecording() } },
+                retryHistory: engine.retrySavingHistory,
+                copyTranscript: engine.copyLastTranscription,
+                recovery: HaasPendingInputActions(
+                    acknowledge: delivery.acknowledgeUncertainInput,
+                    copy: { delivery.copyPending() },
+                    scheduleResume: delivery.scheduleResume,
+                    cancelResume: delivery.cancelScheduledResume
+                )
+            )
+        )
+        .padding(.horizontal, 8)
+        .padding(.top, style == .mini ? 8 : 0)
+        .padding(.bottom, style == .mini ? 8 : 10)
+        .ignoresSafeArea(.container, edges: style == .notch ? .top : [])
     }
 }
