@@ -1,0 +1,152 @@
+name: HaasInput
+
+options:
+  minimumXcodeGenVersion: "2.44.1"
+  developmentLanguage: ja
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: YES
+    DEVELOPMENT_LANGUAGE: ja
+    CURRENT_PROJECT_VERSION: 226
+    MARKETING_VERSION: "0.1.0"
+
+packages:
+  Atomics:
+    url: https://github.com/apple/swift-atomics.git
+    revision: b601256eab081c0f92f059e12818ac1d4f178ff7
+  MediaRemoteAdapter:
+    url: https://github.com/Beingpax/mediaremote-adapter
+    revision: cf30c4f1af29b5829d859f088f8dbdf12611a046
+
+targetTemplates:
+  HaasApplication:
+    type: application
+    platform: macOS
+    sources:
+      - path: HaasInput
+        excludes:
+          - App/HaasInputApp.swift
+          - Configuration/*.plist
+          - Configuration/*.entitlements
+    settings:
+      base:
+        PRODUCT_MODULE_NAME: VoiceInk
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: YES
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_EMIT_LOC_STRINGS: YES
+    dependencies:
+      - package: Atomics
+        product: Atomics
+        embed: false
+      - package: MediaRemoteAdapter
+        product: MediaRemoteAdapter
+        embed: true
+        codeSign: true
+      - sdk: FoundationModels.framework
+        weak: true
+    info:
+      path: HaasInput/Configuration/${target_name}-Info.plist
+      properties:
+        CFBundleDisplayName: $(PRODUCT_NAME)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleLocalizations: [ja]
+        LSApplicationCategoryType: public.app-category.productivity
+        NSMicrophoneUsageDescription: 音声を認識して入力するためにマイクを使用します。
+        NSAppTransportSecurity:
+          NSExceptionDomains:
+            127.0.0.1:
+              NSExceptionAllowsInsecureHTTPLoads: true
+    entitlements:
+      path: HaasInput/Configuration/${target_name}.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.device.audio-input: true
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
+        com.apple.security.cs.disable-library-validation: true
+
+targets:
+  HaasInput:
+    templates: [HaasApplication]
+    productName: Haas音声入力
+    sources:
+      - path: HaasInput/App/HaasInputApp.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tatsumi.VoiceInkHaas
+        PRODUCT_NAME: Haas音声入力
+    info:
+      properties:
+        LSUIElement: false
+
+  HaasInputTestsHost:
+    templates: [HaasApplication]
+    productName: HaasInputTestsHost
+    sources:
+      - path: Tests/TestHost/HaasInputTestHostApp.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tatsumi.VoiceInkHaas.TestsHost
+        PRODUCT_NAME: HaasInputTestsHost
+        ENABLE_TESTABILITY: YES
+    info:
+      properties:
+        LSUIElement: true
+
+  HaasInputTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/VoiceInkTests
+        excludes:
+          - Fixtures/**
+      - path: Tests/VoiceInkTests/Fixtures
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: HaasInputTestsHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tatsumi.VoiceInkHaas.Tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/HaasInputTestsHost.app/Contents/MacOS/HaasInputTestsHost
+        BUNDLE_LOADER: $(TEST_HOST)
+
+schemes:
+  HaasInput:
+    build:
+      targets:
+        HaasInput: [run, profile, analyze, archive]
+    run:
+      config: Debug
+      language: ja
+      region: JP
+    archive:
+      config: Release
+
+  HaasInputTests:
+    build:
+      targets:
+        HaasInputTestsHost: [run, test]
+        HaasInputTests: [test]
+    test:
+      config: Debug
+      language: ja
+      region: JP
+      targets:
+        - name: HaasInputTests
+          parallelizable: false

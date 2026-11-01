@@ -1,0 +1,20 @@
+MediaRemoteAdapter の参照元と原著作権表示
+
+固定 revision: cf30c4f1af29b5829d859f088f8dbdf12611a046
+https://github.com/Beingpax/mediaremote-adapter/tree/cf30c4f1af29b5829d859f088f8dbdf12611a046
+
+以下は、この revision のソースヘッダに記載された原文です。
+
+Sources/CIMediaRemote/MediaRemoteAdapter.m
+Sources/CIMediaRemote/MediaRemoteAdapterKeys.m
+Sources/CIMediaRemote/include/MediaRemoteAdapterKeys.h
+Sources/MediaRemoteAdapter/Resources/run.pl
+Copyright (c) 2025 Jonas van den Berg
+This file is licensed under the BSD 3-Clause License.
+
+Sources/CIMediaRemote/include/MediaRemoteAdapter.h
+Copyright © 2024 Ethan Bills. All rights reserved.
+
+Sources/CIMediaRemote/include/MediaRemote.h
+Copyright (c) 2013-2014 Cykey (David Murray)
+All rights reserved.

@@ -1,0 +1,22 @@
+{
+  "originHash" : "5475c774e6e847925002aa8158c6d59b13b55834306d199b46137f95d4b7ea54",
+  "pins" : [
+    {
+      "identity" : "mediaremote-adapter",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Beingpax/mediaremote-adapter",
+      "state" : {
+        "revision" : "cf30c4f1af29b5829d859f088f8dbdf12611a046"
+      }
+    },
+    {
+      "identity" : "swift-atomics",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-atomics.git",
+      "state" : {
+        "revision" : "b601256eab081c0f92f059e12818ac1d4f178ff7"
+      }
+    }
+  ],
+  "version" : 3
+}
