@@ -1,6 +1,7 @@
 ---
-status: active
+status: done
 created: 2026-11-01
+pr: "#1"
 ---
 
 # 「Haas音声入力」を日本語の専用アプリとして組み直す
@@ -9,7 +10,7 @@ created: 2026-11-01
 
 Haasの日本語音声をカーソル位置へ順次入力する専用アプリにする。利用者が使う画面は「ホーム・履歴・辞書・設定」と録音パネルに整理し、保存済みの辞書・履歴・保留文・録音設定・ショートカットを引き継ぐ。
 
-利用者はModes、Transcribe、AI Models、VoiceInk Proのメニューと関連コードの削除、完全な日本語表示を希望した。アプリ名は「Haas音声入力」に決定済み。再利用元は `voiceink-haas` のマージ後の `a3bc288cc9a643aa0dc9dae3570d3c5e588d679b`。利用者の追加指示により、独立した非公開リポジトリ `masatatsu8/haas-input`、ローカル `/Users/tatsumi/work/haas-input` で作成する。Gitの履歴とupstream設定は引き継がず、新しい履歴で開始する。既存の `voiceink-haas` はマージ済みmainのまま維持する。
+利用者はModes、Transcribe、AI Models、VoiceInk Proのメニューと関連コードの削除、完全な日本語表示を希望した。アプリ名は「Haas音声入力」に決定済み。再利用元は `voiceink-haas` のマージ後の `a3bc288cc9a643aa0dc9dae3570d3c5e588d679b`。利用者の追加指示により、独立した非公開リポジトリ `masatatsu8/haas-input` で作成する。Gitの履歴とupstream設定は引き継がず、新しい履歴で開始する。既存の `voiceink-haas` はマージ済みmainのまま維持する。
 
 ## 方針と完了条件
 

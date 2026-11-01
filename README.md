@@ -17,7 +17,7 @@
 
 ## インストール
 
-1. リリースページから`Haas音声入力`のzipファイルをダウンロードし、展開します。
+1. [リリースページ](https://github.com/masatatsu8/haas-input/releases/latest)から`HaasInput-<バージョン>-arm64.zip`をダウンロードし、展開します。
 2. `Haas音声入力.app`を「アプリケーション」フォルダへ移します。
 3. アプリを開きます。
 
