@@ -14,6 +14,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parent.parent
 DESTINATION = ROOT / ".local-dependencies" / "haas-runtime"
 SPEECH_REVISION = "af6b034918722b65c0f323d984d4644cd4120c77"
+# speech.cpp の ggml submodule が指す commit。speech と libspeech に静的リンクされる。
+GGML_REVISION = "700c9d743ed7cc583c0f1b6507afebb6c0e88bc0"
 MODEL_REVISION = "25c400baaa9c002df8feffc140804e84228f069b"
 VAD_REVISION = "7fcb7aa2a70c312f8579fc987b3e1cdecf9321ca"
 MODEL_FILE = "Haas-616M-ja-v1.0-Q8_0.gguf"
@@ -36,6 +38,18 @@ ASSETS = {
     "SPEECH-LICENSE": {
         "url": f"https://raw.githubusercontent.com/nyosegawa/speech.cpp/{SPEECH_REVISION}/LICENSE",
         "sha256": "688f8aca0abe167966d277ed00bd594a5a51b028a4fbc1516ff9de7ef05c521a",
+    },
+    "GGML-LICENSE": {
+        "url": f"https://raw.githubusercontent.com/nyosegawa/ggml/{GGML_REVISION}/LICENSE",
+        "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    },
+    "CPP-HTTPLIB-LICENSE": {
+        "url": f"https://raw.githubusercontent.com/nyosegawa/speech.cpp/{SPEECH_REVISION}/vendor/cpp-httplib/LICENSE",
+        "sha256": "4b45cbe16d7b71b89ae6127e26e0d90a029198ca5e958ad8e3d0b8bbed364d8b",
+    },
+    "MINIAUDIO-LICENSE": {
+        "url": f"https://raw.githubusercontent.com/nyosegawa/speech.cpp/{SPEECH_REVISION}/vendor/miniaudio/LICENSE",
+        "sha256": "bde09ed161fef45da2194cba70601aab33ca6fdfe6eed2e3d95efd15b48561f9",
     },
     "HAAS-LICENSE": {
         "url": f"https://huggingface.co/sakasegawa/Haas-ja-v1.0-GGUF/raw/{MODEL_REVISION}/LICENSE",

@@ -18,7 +18,7 @@ struct HaasAboutView: View {
                     Text(HaasAppConfiguration.name).font(.largeTitle.bold())
                     Text("バージョン \(version)").foregroundStyle(.secondary)
                 }
-                Text("Haasによる日本語の音声入力アプリです。音声認識はこのMacで行い、認識データの初回取得には通信を使います。")
+                Text("Haasによる日本語の音声入力アプリです。音声認識はこのMacで行います。認識データを同梱していない構成では、初回の取得に通信を使います。")
                 Text("VoiceInkの録音・入力処理を基に、Haas専用に構成しています。")
                     .foregroundStyle(.secondary)
                 GroupBox("診断") {
@@ -42,6 +42,9 @@ struct HaasAboutView: View {
                         licenseButton("swift-atomics", resource: "SWIFT-ATOMICS-LICENSE")
                         licenseButton("MediaRemoteAdapter", resource: "MediaRemoteAdapter-Notices", fileExtension: "txt")
                         licenseButton("speech.cpp", resource: "SPEECH-LICENSE", subdirectory: "Haas")
+                        licenseButton("ggml", resource: "GGML-LICENSE", subdirectory: "Haas")
+                        licenseButton("cpp-httplib", resource: "CPP-HTTPLIB-LICENSE", subdirectory: "Haas")
+                        licenseButton("miniaudio", resource: "MINIAUDIO-LICENSE", subdirectory: "Haas")
                         licenseButton("Haasモデル", resource: "HAAS-LICENSE", subdirectory: "Haas")
                         licenseButton("Silero VAD", resource: "SILERO-LICENSE", subdirectory: "Haas")
                         Link("ソースコード", destination: URL(string: "https://github.com/masatatsu8/haas-input")!)
