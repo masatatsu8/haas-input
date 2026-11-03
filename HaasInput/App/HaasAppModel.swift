@@ -72,6 +72,12 @@ final class HaasAppModel: ObservableObject {
                 }
                 .store(in: &subscriptions)
 
+            NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification)
+                .receive(on: RunLoop.main)
+                .sink { _ in HaasPasteTarget.prepareForegroundAccessibility() }
+                .store(in: &subscriptions)
+            HaasPasteTarget.prepareForegroundAccessibility()
+
             ShortcutDiagnostics.setRecordingContext { [weak engine] in
                 "state=\(engine?.recordingState.rawValue ?? "unavailable")"
             }

@@ -11,8 +11,44 @@ struct HaasPasteTarget: HaasInputTargetChecking {
     let element: AXUIElement
     private static let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "HaasInputDelivery")
 
+    private static let manualAccessibility = "AXManualAccessibility" as CFString
+    private static var webAccessibility: (application: NSRunningApplication, element: AXUIElement)?
+
+    static func prepareForegroundAccessibility() {
+        let application = NSWorkspace.shared.frontmostApplication
+        if let prepared = webAccessibility, prepared.application != application {
+            releaseForegroundAccessibility()
+        }
+        guard AXIsProcessTrusted(), !IsSecureEventInputEnabled(),
+            let application, application.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+            webAccessibility == nil
+        else { return }
+        let app = AXUIElementCreateApplication(application.processIdentifier)
+        AXUIElementSetMessagingTimeout(app, 0.10)
+        // Keep accessibility enabled if another client already requested it.
+        guard boolAttribute(manualAccessibility, from: app).value == false,
+            NSWorkspace.shared.frontmostApplication == application,
+            !IsSecureEventInputEnabled(),
+            AXUIElementSetAttributeValue(app, manualAccessibility, kCFBooleanTrue) == .success
+        else { return }
+        webAccessibility = (application, app)
+    }
+
+    static func releaseForegroundAccessibility() {
+        guard let prepared = webAccessibility else { return }
+        webAccessibility = nil
+        if !prepared.application.isTerminated {
+            let result = AXUIElementSetAttributeValue(prepared.element, manualAccessibility, kCFBooleanFalse)
+            if result != .success {
+                logger.notice("delivery phase=web-access-restore result=\(result.rawValue, privacy: .public)")
+            }
+        }
+    }
+
     static func capture() -> HaasPasteTarget? {
-        readTarget(diagnoseFailure: true).target
+        let read = readTarget(diagnoseFailure: true)
+        if read.target == nil { prepareForegroundAccessibility() }
+        return read.target
     }
 
     var diagnosticAppIdentifier: String {
@@ -20,13 +56,14 @@ struct HaasPasteTarget: HaasInputTargetChecking {
     }
 
     func rejectionReason() -> String? {
-        let read = Self.readTarget(diagnoseFailure: false)
+        let read = Self.readTarget(diagnoseFailure: false, expectedPID: processID)
         guard let current = read.target else { return read.reason }
-        if processID != current.processID { return "app_changed" }
         return CFEqual(element, current.element) ? nil : "focus_changed"
     }
 
-    private static func readTarget(diagnoseFailure: Bool) -> (target: HaasPasteTarget?, reason: String?) {
+    private static func readTarget(
+        diagnoseFailure: Bool, expectedPID: pid_t? = nil
+    ) -> (target: HaasPasteTarget?, reason: String?) {
         let application = NSWorkspace.shared.frontmostApplication
         let appIdentifier = application?.bundleIdentifier ?? "unknown"
         var capturedRole = "unknown"
@@ -41,29 +78,83 @@ struct HaasPasteTarget: HaasInputTargetChecking {
         guard NSApp.keyWindow?.isKeyWindow != true else { return rejected("own_window_focused") }
         guard let application else { return rejected("no_frontmost_app") }
         guard application.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return rejected("own_app_focused") }
-        let app = AXUIElementCreateApplication(application.processIdentifier)
+        let pid = application.processIdentifier
+        if let expectedPID, expectedPID != pid { return rejected("app_changed") }
+        let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.10)
-        var value: CFTypeRef?
-        let appResult = AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &value)
-        guard appResult == .success else { return rejected("app_ax_error_\(appResult.rawValue)") }
-        guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return rejected("app_focus_unavailable") }
-        let element = value as! AXUIElement
+        let focus = readFocus(in: app)
+        guard let element = focus.element else { return rejected("app_focus_unavailable_\(focus.error.rawValue)") }
+        var elementPID: pid_t = 0
+        guard AXUIElementGetPid(element, &elementPID) == .success, elementPID == pid else {
+            return rejected("focus_owner_mismatch")
+        }
         AXUIElementSetMessagingTimeout(element, 0.10)
-        var role: CFTypeRef?
+        var roleValue: CFTypeRef?
         var subrole: CFTypeRef?
-        let roleResult = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
-        guard roleResult == .success else { return rejected("role_ax_error_\(roleResult.rawValue)") }
-        capturedRole = role as? String ?? "unknown"
-        guard let role = role as? String,
-            [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role)
-        else { return rejected("unsupported_role") }
-        AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
+        let roleResult = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleValue)
+        guard roleResult == .success, let role = roleValue as? String else {
+            return rejected("role_unavailable_\(roleResult.rawValue)")
+        }
+        capturedRole = role
+        let subroleResult = AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
+        guard isOptionalAttributeResult(subroleResult) else {
+            return rejected("subrole_ax_error_\(subroleResult.rawValue)")
+        }
         guard subrole as? String != kAXSecureTextFieldSubrole else { return rejected("secure_field") }
+        let protectedContent = boolAttribute("AXProtectedContent" as CFString, from: element)
+        guard isOptionalAttributeResult(protectedContent.error) else {
+            return rejected("protection_ax_error_\(protectedContent.error.rawValue)")
+        }
+        guard protectedContent.value != true else { return rejected("secure_field") }
+        let editable = boolAttribute("AXEditable" as CFString, from: element)
+        guard isOptionalAttributeResult(editable.error) else {
+            return rejected("editability_ax_error_\(editable.error.rawValue)")
+        }
+        let standardRole = [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role)
+        guard editable.value ?? standardRole else { return rejected("unsupported_or_read_only_field") }
+        guard let confirmed = readFocus(in: app).element, CFEqual(confirmed, element) else {
+            return rejected("focus_changed_during_capture")
+        }
+        guard !IsSecureEventInputEnabled() else { return rejected("secure_input") }
         guard NSApp.keyWindow?.isKeyWindow != true else { return rejected("own_window_focused") }
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier else {
+        guard NSWorkspace.shared.frontmostApplication == application else {
             return rejected("app_changed_during_capture")
         }
-        return (HaasPasteTarget(processID: application.processIdentifier, element: element), nil)
+        return (HaasPasteTarget(processID: pid, element: element), nil)
+    }
+
+    private static func readFocus(in app: AXUIElement) -> (element: AXUIElement?, error: AXError) {
+        let appFocus = focusedElement(in: app)
+        if appFocus.element != nil { return appFocus }
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.10)
+        if let focused = focusedElement(in: system).element { return (focused, .success) }
+        return appFocus
+    }
+
+    private static func focusedElement(in root: AXUIElement) -> (element: AXUIElement?, error: AXError) {
+        var value: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(root, kAXFocusedUIElementAttribute as CFString, &value)
+        guard error == .success, let value, CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            return (nil, error)
+        }
+        return (value as! AXUIElement, error)
+    }
+
+    private static func boolAttribute(
+        _ attribute: CFString, from element: AXUIElement
+    ) -> (value: Bool?, error: AXError) {
+        var value: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(element, attribute, &value)
+        guard error == .success else { return (nil, error) }
+        guard let value, CFGetTypeID(value) == CFBooleanGetTypeID(), let number = value as? NSNumber else {
+            return (nil, .failure)
+        }
+        return (number.boolValue, .success)
+    }
+
+    private static func isOptionalAttributeResult(_ error: AXError) -> Bool {
+        error == .success || error == .attributeUnsupported || error == .noValue || error == .notImplemented
     }
 }
 

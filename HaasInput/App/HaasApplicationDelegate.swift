@@ -8,6 +8,7 @@ final class HaasApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         appModel?.shortcuts?.stopMonitoring()
         appModel?.presentation?.hide()
+        HaasPasteTarget.releaseForegroundAccessibility()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
