@@ -7,6 +7,8 @@ protocol HaasPunctuationGenerating: AnyObject {
     func generate(_ text: String) async throws -> String
 }
 
+typealias HaasCandidateValidator = @MainActor (_ candidate: String, _ original: String, _ protectedTerms: [String]) -> String?
+
 @MainActor
 final class HaasPunctuationWorker {
     static let shared: HaasPunctuationWorker = {
@@ -18,9 +20,24 @@ final class HaasPunctuationWorker {
         return HaasPunctuationWorker(generator: nil)
     }()
 
+    static let proofreading: HaasPunctuationWorker = {
+        let validator: HaasCandidateValidator = { candidate, original, terms in
+            HaasProofreadValidator.validatedCandidate(candidate, preserving: original, protectedTerms: terms)
+        }
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *) {
+            return HaasPunctuationWorker(
+                generator: HaasApplePunctuationGenerator(instructions: .proofread),
+                timeout: .seconds(2.5), validator: validator)
+        }
+        #endif
+        return HaasPunctuationWorker(generator: nil, timeout: .seconds(2.5), validator: validator)
+    }()
+
     private struct Waiter {
         let id: UUID
         let text: String
+        let protectedTerms: [String]
         let deadline: ContinuousClock.Instant
         let timer: Task<Void, Never>
         let completion: (String?) -> Void
@@ -28,18 +45,25 @@ final class HaasPunctuationWorker {
 
     private let generator: (any HaasPunctuationGenerating)?
     private let timeout: Duration
+    private let validator: HaasCandidateValidator
     private var nativeRequestID: UUID?
     private var nativeTask: Task<Void, Never>?
     private var waiter: Waiter?
 
     var unavailableReason: String? {
-        guard let generator else { return "自然さ優先には macOS 26以降と利用可能な Apple Intelligence が必要です。" }
+        guard let generator else { return "端末内AIを使う補い方には、macOS 26以降と利用可能なApple Intelligenceが必要です。" }
         return generator.unavailableReason
     }
 
-    init(generator: (any HaasPunctuationGenerating)?, timeout: Duration = .seconds(1.5)) {
+    init(
+        generator: (any HaasPunctuationGenerating)?, timeout: Duration = .seconds(1.5),
+        validator: @escaping HaasCandidateValidator = { candidate, original, _ in
+            HaasPunctuationFormatter.validatedCandidate(candidate, preserving: original)
+        }
+    ) {
         self.generator = generator
         self.timeout = timeout
+        self.validator = validator
     }
 
     func prewarm() {
@@ -50,7 +74,7 @@ final class HaasPunctuationWorker {
     @discardableResult
     func submit(
         _ text: String, requestID: UUID, receivedAt: ContinuousClock.Instant = .now,
-        completion: @escaping (String?) -> Void
+        protectedTerms: [String] = [], completion: @escaping (String?) -> Void
     ) -> Bool {
         let deadline = receivedAt.advanced(by: timeout)
         guard nativeRequestID == nil, let generator, generator.unavailableReason == nil,
@@ -62,7 +86,7 @@ final class HaasPunctuationWorker {
             catch { return }
             self?.expire(requestID)
         }
-        waiter = Waiter(id: requestID, text: text, deadline: deadline, timer: timer, completion: completion)
+        waiter = Waiter(id: requestID, text: text, protectedTerms: protectedTerms, deadline: deadline, timer: timer, completion: completion)
         nativeTask = Task { @MainActor [weak self, generator] in
             let output: String?
             do {
@@ -103,7 +127,7 @@ final class HaasPunctuationWorker {
         waiter = nil
         pending.timer.cancel()
         let candidate = ContinuousClock.now < pending.deadline
-            ? output.flatMap { HaasPunctuationFormatter.validatedCandidate($0, preserving: pending.text) } : nil
+            ? output.flatMap { validator($0, pending.text, pending.protectedTerms) } : nil
         pending.completion(candidate)
     }
 }
