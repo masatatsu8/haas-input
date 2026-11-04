@@ -1,4 +1,28 @@
-# Haas音声入力
+<p align="center">
+  <img src="HaasInput/Resources/Assets.xcassets/AppIcon.appiconset/256-mac.png" width="128" height="128" alt="Haas音声入力のアイコン">
+</p>
+
+<h1 align="center">Haas音声入力</h1>
+
+<p align="center">話しているそばから、カーソル位置へ。Macの中で完結する日本語の音声入力アプリです。</p>
+
+<p align="center">
+  <a href="https://github.com/masatatsu8/haas-input/releases/latest"><img src="https://img.shields.io/github/v/release/masatatsu8/haas-input?label=%E3%83%AA%E3%83%AA%E3%83%BC%E3%82%B9" alt="最新リリース"></a>
+  <img src="https://img.shields.io/badge/macOS-15%2B-lightgrey?logo=apple" alt="macOS 15以降">
+  <img src="https://img.shields.io/badge/Apple%20Silicon-M1%2B-lightgrey" alt="Apple Silicon">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/masatatsu8/haas-input?label=%E3%83%A9%E3%82%A4%E3%82%BB%E3%83%B3%E3%82%B9" alt="ライセンス GPL v3"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/masatatsu8/haas-input/releases/latest"><strong>ダウンロード</strong></a> ·
+  <a href="#インストール">インストール</a> ·
+  <a href="#使い方">使い方</a> ·
+  <a href="#ソースからビルドする">ビルド</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/hero.png" width="800" alt="録音パネルを表示しながら、メモアプリのカーソル位置へ文章が入力されていく様子">
+</p>
 
 日本語の音声をこのMacの中で認識し、カーソル位置へ入力するmacOSアプリです。認識には日本語音声認識モデル[Haas-ja](https://huggingface.co/third-intelligence/Haas-ja-v1.0)を使います。録音中に確定した区間から順に入力するため、話し終える前から文字が入り始めます。
 
@@ -64,6 +88,10 @@ open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibil
 3. 確定した区間から、カーソル位置へ順に入力されます。話し終えたら、選んだ操作に合わせて録音を止めます。
 
 録音中は小さな録音パネルが表示されます。パネルの位置は「設定」の「表示」で、画面下部の「ミニ」と画面上部の「ノッチ」から選べます。途中の認識結果を表示するかどうかも、ここで切り替えられます。
+
+<p align="center">
+  <img src="docs/images/recorder-panels.png" width="720" alt="画面上部に表示するノッチと、画面下部に表示するミニの録音パネル">
+</p>
 
 録音を取り消すには、録音パネルが出ている間にEscを2回押します。
 

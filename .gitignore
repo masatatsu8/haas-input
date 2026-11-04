@@ -11,3 +11,4 @@ xcuserdata/
 *.profraw
 *.dSYM/
 build/
+_docs/
