@@ -315,6 +315,29 @@ final class HaasInputDeliveryTests: XCTestCase {
         XCTAssertEqual(fixture.paster.calls.map(\.text), ["巽さんの端末ないで"])
     }
 
+    func testProofreadProtectsReplacementRuleOutputs() async throws {
+        let fixture = try DeliveryFixture()
+        let generator = ControlledPunctuationGenerator()
+        let session = try HaasDictationSession(
+            runtime: .bundled(directory: fixture.root), words: "", inputTarget: nil, onPartialTranscript: nil,
+            replacementPlan: WordReplacementPlan(records: [
+                .init(id: UUID(), originalText: "ジハン", replacementText: "自販", dateAdded: Date()),
+            ]),
+            punctuationMode: .proofread, punctuationWorker: proofreadWorker(generator, timeout: .seconds(2)),
+            delivery: fixture.delivery
+        )
+        defer { session.cancel(); generator.cancelPending(); fixture.cleanUp() }
+        try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
+
+        session.receive(.committed(id: "first", text: "ジハンの件です"))
+        await waitUntil { generator.requests.count == 1 }
+        XCTAssertEqual(generator.requests, ["自販の件です"])
+        try generator.complete(index: 0, result: .success("次半の件です"))
+        await waitUntil { session.recognizedText == "自販の件です" && fixture.paster.calls.count == 1 }
+        await fixture.delivery.finish(sessionID: session.sessionID)
+        XCTAssertEqual(fixture.paster.calls.map(\.text), ["自販の件です"])
+    }
+
     private func proofreadWorker(_ generator: ControlledPunctuationGenerator, timeout: Duration) -> HaasPunctuationWorker {
         HaasPunctuationWorker(generator: generator, timeout: timeout) { candidate, original, terms in
             HaasProofreadValidator.validatedCandidate(candidate, preserving: original, protectedTerms: terms)

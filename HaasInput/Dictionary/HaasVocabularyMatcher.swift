@@ -53,7 +53,9 @@ struct HaasVocabularyMatcher {
                 continue
             }
             let range = tokens[index].range.lowerBound..<tokens[match.end].range.upperBound
+            let spanTokens = tokens[index...match.end]
             index = match.end + 1
+            if Self.hasUnsafeBoundary(spanTokens, range: range, in: text) { continue }
             if blockedRanges.contains(where: { $0.overlaps(range) }) { continue }
             output += text[cursor..<range.lowerBound]
             output += match.form
@@ -81,6 +83,40 @@ struct HaasVocabularyMatcher {
             end += 1
         }
         return best
+    }
+
+    /// 助詞で始まる/終わる複数語の範囲や、漢字・数字の語の途中で切れる範囲は置換しない。
+    private static func hasUnsafeBoundary(_ span: ArraySlice<HaasReadingToken>, range: Range<String.Index>, in text: String) -> Bool {
+        if span.count >= 2, let first = span.first, let last = span.last,
+           isHiraganaOnly(first.surface) || isHiraganaOnly(last.surface) {
+            return true
+        }
+        if let first = text[range].first, isKanji(first), range.lowerBound > text.startIndex,
+           let before = text[..<range.lowerBound].last, isKanji(before) || isDigit(before) {
+            return true
+        }
+        if let last = text[range].last, isKanji(last), range.upperBound < text.endIndex,
+           let after = text[range.upperBound...].first, isKanji(after) || isDigit(after) {
+            return true
+        }
+        return false
+    }
+
+    private static func isHiraganaOnly(_ text: String) -> Bool {
+        !text.isEmpty && text.unicodeScalars.allSatisfy { (0x3041...0x309F).contains($0.value) }
+    }
+
+    private static func isKanji(_ character: Character) -> Bool {
+        character.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x2FA1F, 0x3005, 0x3006: true
+            default: false
+            }
+        }
+    }
+
+    private static func isDigit(_ character: Character) -> Bool {
+        character.unicodeScalars.contains { ($0.value >= 0x30 && $0.value <= 0x39) || (0xFF10...0xFF19).contains($0.value) }
     }
 
     private static func key(forReading reading: String) -> String? {

@@ -39,8 +39,9 @@ final class HaasVocabularyMatcherTests: XCTestCase {
 
     func testDoesNotRewriteProtectedTexts() {
         let matcher = HaasVocabularyMatcher(entries: [entry("JiHAN", ["じはん"])])
-        XCTAssertEqual(matcher.apply(to: "自販機の件"), "JiHAN機の件")
-        XCTAssertEqual(matcher.apply(to: "自販機の件", protecting: ["自販"]), "自販機の件")
+        XCTAssertEqual(matcher.apply(to: "自販の件"), "JiHANの件")
+        XCTAssertEqual(matcher.apply(to: "自販の件", protecting: ["自販"]), "自販の件")
+        XCTAssertEqual(matcher.apply(to: "自販機の件"), "自販機の件")
         XCTAssertEqual(matcher.apply(to: "次半の件"), "JiHANの件")
     }
 
@@ -70,10 +71,10 @@ final class HaasVocabularyMatcherTests: XCTestCase {
     }
 
     func testSpanIsCappedAtEightTokens() {
-        let eight = HaasVocabularyMatcher(entries: [entry("X", ["かきくけこさしす"])])
-        XCTAssertEqual(eight.apply(to: "か・き・く・け・こ・さ・し・す"), "X")
-        let nine = HaasVocabularyMatcher(entries: [entry("X", ["かきくけこさしすせ"])])
-        XCTAssertEqual(nine.apply(to: "か・き・く・け・こ・さ・し・す・せ"), "か・き・く・け・こ・さ・し・す・せ")
+        let eight = HaasVocabularyMatcher(entries: [entry("X", ["カキクケコサシス"])])
+        XCTAssertEqual(eight.apply(to: "カ・キ・ク・ケ・コ・サ・シ・ス"), "X")
+        let nine = HaasVocabularyMatcher(entries: [entry("X", ["カキクケコサシスセ"])])
+        XCTAssertEqual(nine.apply(to: "カ・キ・ク・ケ・コ・サ・シ・ス・セ"), "カ・キ・ク・ケ・コ・サ・シ・ス・セ")
     }
 
     func testKeyLengthBoundaryAcceptsThreeAndRejectsTwo() {
@@ -93,5 +94,22 @@ final class HaasVocabularyMatcherTests: XCTestCase {
 
     func testEmptyMatcherReturnsInputUnchanged() {
         XCTAssertEqual(HaasVocabularyMatcher.empty.apply(to: "辰美さん"), "辰美さん")
+    }
+
+    func testOrdinaryJapaneseStaysUnchanged() {
+        let matcher = HaasVocabularyMatcher(entries: [
+            entry("Haas", ["ハース"], .product), entry("巽", ["たつみ"], .person),
+            entry("JiHAN Prime", ["ジハンプライム"], .product), entry("JiHAN", ["じはん"]),
+        ])
+        for sentence in ["会議は明日です", "私は明日休みます", "今日は明日の準備をします",
+                         "3時半に集合", "何時半ですか", "自販機の前"] {
+            XCTAssertEqual(matcher.apply(to: sentence), sentence, sentence)
+        }
+    }
+
+    func testKanjiNameInsideLongerCompoundIsLeftAlone() {
+        // 受け入れる代償: 漢字に挟まれた範囲は、正しい誤認識でも置換しない。
+        let matcher = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"], .person)])
+        XCTAssertEqual(matcher.apply(to: "辰美部長に連絡"), "辰美部長に連絡")
     }
 }

@@ -72,7 +72,7 @@ final class HaasDictationSession {
     private var isCancelled = false
     private var isFinished = false
     private var transcript: HaasSessionTranscript
-    private let vocabularyWrittenForms: [String]
+    private let protectedTerms: [String]
     private var latestRawPreview = ""
     private var pendingFormatting: PendingFormatting?
     private var formattingWaiters: [CheckedContinuation<Void, Never>] = []
@@ -97,7 +97,8 @@ final class HaasDictationSession {
         self.punctuationWorker = punctuationWorker ?? .forMode(punctuationMode)
         self.delivery = delivery ?? .shared
         let vocabulary = HaasVocabularyMatcher(entries: vocabularyEntries)
-        vocabularyWrittenForms = vocabulary.writtenForms
+        var seenTerms: Set<String> = []
+        protectedTerms = (vocabulary.writtenForms + replacementPlan.replacementTexts).filter { seenTerms.insert($0).inserted }
         transcript = HaasSessionTranscript(replacements: replacementPlan, vocabulary: vocabulary)
     }
 
@@ -208,7 +209,7 @@ final class HaasDictationSession {
                 }
                 pendingFormatting = PendingFormatting(requestID: requestID, itemID: id, text: base)
                 if !punctuationWorker.submit(base, requestID: requestID, receivedAt: receivedAt,
-                    protectedTerms: vocabularyWrittenForms.filter(base.contains), completion: { [weak self] candidate in
+                    protectedTerms: protectedTerms.filter(base.contains), completion: { [weak self] candidate in
                     self?.completeFormatting(requestID: requestID, candidate: candidate)
                 }) {
                     completeFormatting(requestID: requestID, candidate: nil)

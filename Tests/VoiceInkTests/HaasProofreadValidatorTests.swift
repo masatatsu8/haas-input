@@ -29,4 +29,21 @@ final class HaasProofreadValidatorTests: XCTestCase {
         XCTAssertEqual(HaasProofreadValidator.validatedCandidate("値は3.5です。", preserving: "値は３．５です", protectedTerms: []),
                        "値は3.5です。")
     }
+
+    func testDropsTrailingPeriodAfterUnfinishedEnding() {
+        for (original, candidate, expected) in [
+            ("確認してから", "確認してから。", "確認してから"),
+            ("確認したので", "確認したので。", "確認したので"),
+            ("端末ないで処理してから", "端末内で処理してから。", "端末内で処理してから"),
+            ("確認したので」", "確認したので。」", "確認したので」"),
+        ] {
+            XCTAssertEqual(HaasProofreadValidator.validatedCandidate(
+                candidate, preserving: original, protectedTerms: []), expected, original)
+        }
+    }
+
+    func testKeepsPeriodOnFinishedSentence() {
+        XCTAssertEqual(HaasProofreadValidator.validatedCandidate(
+            "確認します。", preserving: "確認します", protectedTerms: []), "確認します。")
+    }
 }
