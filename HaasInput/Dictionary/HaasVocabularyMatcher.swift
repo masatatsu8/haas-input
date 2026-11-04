@@ -10,7 +10,7 @@ struct HaasVocabularyMatcher {
     /// 照合キー (正規化した読み) から正式表記への対応。曖昧なキーは含まない。
     private let formsByKey: [String: String]
 
-    var writtenForms: [String]
+    let writtenForms: [String]
 
     init(entries: [HaasVocabularyEntry]) {
         var forms: [String: String] = [:]
@@ -33,14 +33,19 @@ struct HaasVocabularyMatcher {
             }
         }
         formsByKey = forms
-        writtenForms = entries.map(\.writtenForm)
+        var seen: Set<String> = []
+        writtenForms = entries.compactMap { entry in
+            let form = entry.writtenForm.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !form.isEmpty && seen.insert(form).inserted ? form : nil
+        }
     }
 
     func apply(to text: String, protecting protectedTexts: [String] = []) -> String {
         guard !formsByKey.isEmpty else { return text }
         let tokens = HaasJapaneseReading.tokens(in: text)
-        let protectedRanges = protectedTexts.flatMap { Self.occurrences(of: $0, in: text) }
-        var replacements: [(range: Range<String.Index>, form: String)] = []
+        let blockedRanges = (writtenForms + protectedTexts).flatMap { Self.occurrences(of: $0, in: text) }
+        var output = ""
+        var cursor = text.startIndex
         var index = 0
         while index < tokens.count {
             guard tokens[index].isJapanese, let match = longestMatch(from: index, in: tokens, text: text) else {
@@ -49,16 +54,13 @@ struct HaasVocabularyMatcher {
             }
             let range = tokens[index].range.lowerBound..<tokens[match.end].range.upperBound
             index = match.end + 1
-            if text[range] == match.form { continue }
-            let blocked = protectedRanges + Self.occurrences(of: match.form, in: text)
-            if blocked.contains(where: { $0.overlaps(range) }) { continue }
-            replacements.append((range, match.form))
+            if blockedRanges.contains(where: { $0.overlaps(range) }) { continue }
+            output += text[cursor..<range.lowerBound]
+            output += match.form
+            cursor = range.upperBound
         }
-        var result = text
-        for replacement in replacements.reversed() {
-            result.replaceSubrange(replacement.range, with: replacement.form)
-        }
-        return result
+        output += text[cursor...]
+        return output
     }
 
     private func longestMatch(from start: Int, in tokens: [HaasReadingToken], text: String) -> (end: Int, form: String)? {
