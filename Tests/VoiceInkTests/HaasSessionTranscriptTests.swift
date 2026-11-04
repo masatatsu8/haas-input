@@ -18,4 +18,18 @@ final class HaasSessionTranscriptTests: XCTestCase {
         XCTAssertEqual(next.text, "新しいJiHANの話")
         XCTAssertEqual(first.text, "JiHANの資料")
     }
+
+    func testCommitAppliesExplicitReplacementsBeforeVocabularyMatching() throws {
+        let plan = try WordReplacementPlan(records: [
+            .init(id: UUID(), originalText: "ジハン", replacementText: "自販", dateAdded: Date()),
+        ])
+        let vocabulary = HaasVocabularyMatcher(entries: [
+            HaasVocabularyEntry(id: UUID(), writtenForm: "巽", readings: ["たつみ"], category: .person),
+            HaasVocabularyEntry(id: UUID(), writtenForm: "JiHAN", readings: ["じはん"], category: .product),
+        ])
+        var transcript = HaasSessionTranscript(replacements: plan, vocabulary: vocabulary)
+        // 明示的なルールの結果「自販」は、読み (じはん) が登録語と同じでも書き換えない
+        XCTAssertEqual(transcript.commit(id: "a", rawText: "辰美さんのジハン機"), "巽さんの自販機")
+        XCTAssertEqual(transcript.text, "巽さんの自販機")
+    }
 }

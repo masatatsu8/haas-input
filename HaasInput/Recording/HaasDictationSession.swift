@@ -72,6 +72,7 @@ final class HaasDictationSession {
     private var isCancelled = false
     private var isFinished = false
     private var transcript: HaasSessionTranscript
+    private let vocabularyWrittenForms: [String]
     private var latestRawPreview = ""
     private var pendingFormatting: PendingFormatting?
     private var formattingWaiters: [CheckedContinuation<Void, Never>] = []
@@ -82,7 +83,8 @@ final class HaasDictationSession {
     init(
         runtime: HaasRuntimeConfiguration, words: String,
         inputTarget: HaasPasteTarget?, onPartialTranscript: ((String) -> Void)?,
-        replacementPlan: WordReplacementPlan, punctuationMode: HaasPunctuationMode = .fast,
+        replacementPlan: WordReplacementPlan, vocabularyEntries: [HaasVocabularyEntry] = [],
+        punctuationMode: HaasPunctuationMode = .fast,
         punctuationWorker: HaasPunctuationWorker? = nil, delivery: HaasInputDelivery? = nil,
         onFailure: ((Error) -> Void)? = nil
     ) {
@@ -94,7 +96,9 @@ final class HaasDictationSession {
         self.punctuationMode = punctuationMode
         self.punctuationWorker = punctuationWorker ?? .shared
         self.delivery = delivery ?? .shared
-        transcript = HaasSessionTranscript(replacements: replacementPlan)
+        let vocabulary = HaasVocabularyMatcher(entries: vocabularyEntries)
+        vocabularyWrittenForms = vocabulary.writtenForms
+        transcript = HaasSessionTranscript(replacements: replacementPlan, vocabulary: vocabulary)
     }
 
     func prepare() async throws -> ((Data) -> Void)? {

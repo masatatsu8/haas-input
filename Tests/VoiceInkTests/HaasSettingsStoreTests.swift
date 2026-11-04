@@ -32,6 +32,21 @@ final class HaasSettingsStoreTests: XCTestCase {
         XCTAssertEqual(edited.entries.first?.category, .product)
     }
 
+    func testVocabularyEntriesSnapshotReturnsSavedEntriesAndThrowsWhenUnreadable() async throws {
+        let suite = "HaasSettingsStoreTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = HaasSettingsStore(defaults: defaults)
+        try store.saveEntry(writtenForm: "VoiceInk", readings: ["ボイスインク"], category: .product)
+
+        let snapshot = try HaasSettingsStore(defaults: defaults).vocabularyEntriesSnapshot()
+        XCTAssertEqual(snapshot.map(\.writtenForm), ["VoiceInk"])
+        XCTAssertEqual(snapshot.map(\.id), store.entries.map(\.id))
+
+        defaults.set("wrong stored type", forKey: "HaasVocabularyEntriesV1")
+        XCTAssertThrowsError(try HaasSettingsStore(defaults: defaults).vocabularyEntriesSnapshot())
+    }
+
     func testInvalidVocabularyCannotChangeSavedDictionary() async throws {
         let suite = "HaasSettingsStoreTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
