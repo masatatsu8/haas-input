@@ -183,7 +183,6 @@ final class CoreAudioRecorder: @unchecked Sendable {
             // The output file is per recording; the AUHAL setup above is reused.
             try createOutputFile(at: url)
             resetAudioProcessingState()
-            performOnAudioProcessingQueue { pcmConverter = nil }
 
             try startAudioUnit(isCurrent: isCurrent)
         } catch {
@@ -354,7 +353,6 @@ final class CoreAudioRecorder: @unchecked Sendable {
         allocateAudioBuffers(
             maxFrames: renderFrameCapacity(for: newDeviceID),
             channelCount: newCaptureChannelCount,
-            inputSampleRate: newDeviceFormat.mSampleRate,
             resetQueuedAudio: true
         )
 
@@ -517,7 +515,6 @@ final class CoreAudioRecorder: @unchecked Sendable {
         allocateAudioBuffers(
             maxFrames: renderFrameCapacity(for: currentDeviceID),
             channelCount: captureChannelCount,
-            inputSampleRate: deviceFormat.mSampleRate,
             resetQueuedAudio: true
         )
     }
@@ -591,7 +588,6 @@ final class CoreAudioRecorder: @unchecked Sendable {
     private func allocateAudioBuffers(
         maxFrames: UInt32,
         channelCount: UInt32,
-        inputSampleRate: Double,
         resetQueuedAudio: Bool
     ) {
         let bufferSamples = maxFrames * channelCount
@@ -1062,6 +1058,9 @@ final class CoreAudioRecorder: @unchecked Sendable {
             writeConvertedAudio(pcm)
         } catch {
             pcmConverter = nil
+            logger.error(
+                "Audio conversion from \(inputSampleRate, privacy: .public) Hz failed: \(String(reflecting: error), privacy: .public)"
+            )
             reportRecordingFailure(.failedToConvertAudio)
         }
     }
@@ -1074,6 +1073,9 @@ final class CoreAudioRecorder: @unchecked Sendable {
         do {
             writeConvertedAudio(try converter.finish())
         } catch {
+            logger.error(
+                "Flushing audio converted from \(converter.inputSampleRate, privacy: .public) Hz failed: \(String(reflecting: error), privacy: .public)"
+            )
             reportRecordingFailure(.failedToConvertAudio)
         }
     }

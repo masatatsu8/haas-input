@@ -27,7 +27,7 @@ final class HaasPCMConverter {
                 pcmFormat: output,
                 frameCapacity: AVAudioFrameCount(
                     (Double(maximumInputFrames) * Self.outputSampleRate / inputSampleRate).rounded(.up)) + 1_024)
-        else { throw HaasRuntimeError.invalidAudio }
+        else { throw CoreAudioRecorderError.failedToConvertAudio }
         converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
         self.inputSampleRate = inputSampleRate
         self.converter = converter
@@ -38,8 +38,8 @@ final class HaasPCMConverter {
     /// インターリーブされた Float32 のサンプルを変換し、得られた 24 kHz の Int16 PCM を返す。
     /// 変換器の遅延分は次回以降の呼び出しか `finish()` で出力される。
     func convert(interleaved samples: UnsafePointer<Float32>, frameCount: Int, channelCount: Int) throws -> Data {
-        guard !ended, frameCount >= 0, channelCount > 0 else { throw HaasRuntimeError.invalidAudio }
-        guard let mono = inputBuffer.floatChannelData?[0] else { throw HaasRuntimeError.invalidAudio }
+        guard !ended, frameCount >= 0, channelCount > 0 else { throw CoreAudioRecorderError.failedToConvertAudio }
+        guard let mono = inputBuffer.floatChannelData?[0] else { throw CoreAudioRecorderError.failedToConvertAudio }
 
         var result = Data()
         var offset = 0
@@ -88,7 +88,7 @@ final class HaasPCMConverter {
             }
             if let error { throw error }
             guard status != .error, let samples = outputBuffer.int16ChannelData?[0] else {
-                throw HaasRuntimeError.invalidAudio
+                throw CoreAudioRecorderError.failedToConvertAudio
             }
             result.append(Data(bytes: samples, count: Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size))
             switch status {
@@ -97,9 +97,9 @@ final class HaasPCMConverter {
             case .inputRanDry, .endOfStream:
                 return result
             case .error:
-                throw HaasRuntimeError.invalidAudio
+                throw CoreAudioRecorderError.failedToConvertAudio
             @unknown default:
-                throw HaasRuntimeError.invalidAudio
+                throw CoreAudioRecorderError.failedToConvertAudio
             }
         }
     }
