@@ -94,7 +94,7 @@ final class HaasDictationSession {
         self.onPartialTranscript = onPartialTranscript
         self.onFailure = onFailure
         self.punctuationMode = punctuationMode
-        self.punctuationWorker = punctuationWorker ?? .shared
+        self.punctuationWorker = punctuationWorker ?? .forMode(punctuationMode)
         self.delivery = delivery ?? .shared
         let vocabulary = HaasVocabularyMatcher(entries: vocabularyEntries)
         vocabularyWrittenForms = vocabulary.writtenForms
@@ -104,7 +104,7 @@ final class HaasDictationSession {
     func prepare() async throws -> ((Data) -> Void)? {
         try await delivery.begin(sessionID: sessionID, target: inputTarget)
         try checkCancellation()
-        if punctuationMode == .natural { punctuationWorker.prewarm() }
+        if punctuationMode.usesOnDeviceModel { punctuationWorker.prewarm() }
         let client = HaasRealtimeClient(configuration: runtime) { [weak self] event in
             self?.receive(event)
         }
@@ -207,7 +207,8 @@ final class HaasDictationSession {
                     return
                 }
                 pendingFormatting = PendingFormatting(requestID: requestID, itemID: id, text: base)
-                if !punctuationWorker.submit(base, requestID: requestID, receivedAt: receivedAt, completion: { [weak self] candidate in
+                if !punctuationWorker.submit(base, requestID: requestID, receivedAt: receivedAt,
+                    protectedTerms: vocabularyWrittenForms.filter(base.contains), completion: { [weak self] candidate in
                     self?.completeFormatting(requestID: requestID, candidate: candidate)
                 }) {
                     completeFormatting(requestID: requestID, candidate: nil)

@@ -34,6 +34,10 @@ final class HaasPunctuationWorker {
         return HaasPunctuationWorker(generator: nil, timeout: .seconds(2.5), validator: validator)
     }()
 
+    static func forMode(_ mode: HaasPunctuationMode) -> HaasPunctuationWorker {
+        mode == .proofread ? proofreading : shared
+    }
+
     private struct Waiter {
         let id: UUID
         let text: String
