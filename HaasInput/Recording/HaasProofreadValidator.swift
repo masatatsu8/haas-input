@@ -3,6 +3,7 @@ import Foundation
 enum HaasProofreadValidator {
     static let maximumEditRatio = 0.2
     static let minimumEditAllowance = 2
+    private static let unfinishedEndings = HaasPunctuationFormatter.unfinishedEndings + ["から", "て"]
 
     static func validatedCandidate(_ candidate: String, preserving original: String, protectedTerms: [String]) -> String? {
         guard !candidate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
@@ -22,8 +23,6 @@ enum HaasProofreadValidator {
         }
         return removingPeriodAfterUnfinishedEnding(candidate, original: original)
     }
-
-    private static let unfinishedEndings = HaasPunctuationFormatter.unfinishedEndings + ["から", "て"]
 
     /// 続きがある語尾の原文には、モデルが付けた末尾の「。」を残さない。
     private static func removingPeriodAfterUnfinishedEnding(_ candidate: String, original: String) -> String {
@@ -72,7 +71,7 @@ enum HaasProofreadValidator {
 
     private static func isSeparator(_ character: Character) -> Bool {
         character.isWhitespace || character == "、" || character == "。"
-            || (character.unicodeScalars.allSatisfy(isJapanese))
+            || character.unicodeScalars.allSatisfy(isJapanese)
     }
 
     private static func foreignRuns(in text: String) -> [String] {

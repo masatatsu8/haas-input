@@ -43,8 +43,7 @@ enum HaasJapaneseReading {
 
     /// 本文を語に分け、語ごとの読みを付ける。
     static func tokens(in text: String) -> [HaasReadingToken] {
-        let nsText = text as NSString
-        let fullRange = CFRangeMake(0, nsText.length)
+        let fullRange = CFRangeMake(0, text.utf16.count)
         guard fullRange.length > 0 else { return [] }
         let tokenizer = CFStringTokenizerCreate(
             kCFAllocatorDefault, text as CFString, fullRange,

@@ -15,8 +15,8 @@ struct HaasVocabularyMatcher {
     init(entries: [HaasVocabularyEntry]) {
         var forms: [String: String] = [:]
         var ambiguousKeys: Set<String> = []
-        for entry in entries {
-            let writtenForm = entry.writtenForm.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedForms = entries.map { $0.writtenForm.trimmingCharacters(in: .whitespacesAndNewlines) }
+        for (entry, writtenForm) in zip(entries, trimmedForms) {
             guard !writtenForm.isEmpty else { continue }
             var sources = entry.readings
             if Self.isKanaOnly(writtenForm) { sources.append(writtenForm) }
@@ -34,9 +34,8 @@ struct HaasVocabularyMatcher {
         }
         formsByKey = forms
         var seen: Set<String> = []
-        writtenForms = entries.compactMap { entry in
-            let form = entry.writtenForm.trimmingCharacters(in: .whitespacesAndNewlines)
-            return !form.isEmpty && seen.insert(form).inserted ? form : nil
+        writtenForms = trimmedForms.compactMap { form in
+            !form.isEmpty && seen.insert(form).inserted ? form : nil
         }
     }
 

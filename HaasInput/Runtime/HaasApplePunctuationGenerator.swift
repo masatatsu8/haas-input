@@ -83,8 +83,8 @@ final class HaasApplePunctuationGenerator: HaasPunctuationGenerating {
 private extension HaasApplePunctuationGenerator.Instructions {
     var text: String {
         switch self {
-        case .punctuation: return Self.punctuationText
-        case .proofread: return Self.proofreadText
+        case .punctuation: Self.punctuationText
+        case .proofread: Self.proofreadText
         }
     }
 
