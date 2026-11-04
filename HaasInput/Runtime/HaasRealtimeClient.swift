@@ -18,7 +18,6 @@ final class HaasRealtimeClient {
     private var receiveTask: Task<Void, Never>?
     private var sendTail: Task<Void, Error>?
     private var waiter: Waiter?
-    private var converter: HaasPCMConverter?
     private var transcript = HaasRealtimeTranscript()
     private var failure: Error?
     private var sessionCreated = false
@@ -62,7 +61,6 @@ final class HaasRealtimeClient {
             components.path = "/v1/realtime"
             components.queryItems = [URLQueryItem(name: "model", value: "Haas-ja-v1.0")]
             guard let url = components.url else { throw HaasRuntimeError.protocolViolation("接続先 URL が不正です。") }
-            converter = try HaasPCMConverter()
             let socket = session.webSocketTask(with: url)
             socket.maximumMessageSize = 1_048_576
             self.socket = socket
@@ -81,7 +79,7 @@ final class HaasRealtimeClient {
                 "session": [
                     "type": "transcription",
                     "audio": ["input": [
-                        "format": ["type": "audio/pcm", "rate": 24_000],
+                        "format": ["type": "audio/pcm", "rate": Int(HaasPCMConverter.outputSampleRate)],
                         "transcription": transcription,
                         "turn_detection": [
                             "type": "server_vad", "threshold": 0.5,
@@ -99,9 +97,15 @@ final class HaasRealtimeClient {
         }
     }
 
+    /// `data` は 24 kHz・モノラル・16 bit リトルエンディアンの PCM (録音側で変換済み)。
     func sendAudioChunk(_ data: Data) async throws {
         try checkActive()
-        guard state == .connected, let converter else { throw HaasRuntimeError.notConnected }
+        guard state == .connected else { throw HaasRuntimeError.notConnected }
+        guard data.count.isMultiple(of: MemoryLayout<Int16>.size) else {
+            let error = HaasRuntimeError.invalidAudio
+            fail(error)
+            throw error
+        }
         guard pendingAudioBytes + data.count <= maximumPendingAudioBytes else {
             let error = HaasRuntimeError.audioBacklog
             fail(error)
@@ -109,7 +113,6 @@ final class HaasRealtimeClient {
         }
         pendingAudioBytes += data.count
         do {
-            let pcm = try converter.convert(data)
             let previous = sendTail
             let task = Task { [weak self] in
                 defer { self?.pendingAudioBytes -= data.count }
@@ -117,8 +120,8 @@ final class HaasRealtimeClient {
                 try Task.checkCancellation()
                 guard let self else { throw CancellationError() }
                 try self.checkActive()
-                if !pcm.isEmpty {
-                    try await self.send(["type": "input_audio_buffer.append", "audio": pcm.base64EncodedString()])
+                if !data.isEmpty {
+                    try await self.send(["type": "input_audio_buffer.append", "audio": data.base64EncodedString()])
                 }
             }
             sendTail = task
@@ -137,10 +140,6 @@ final class HaasRealtimeClient {
         do {
             try await sendTail?.value
             try checkActive()
-            if let tail = try converter?.finish(), !tail.isEmpty {
-                try await send(["type": "input_audio_buffer.append", "audio": tail.base64EncodedString()])
-            }
-
             // speech.cpp 0.9.4 flushes VAD's last region before session.updated. A raw commit also
             // transcribes trailing silence. https://github.com/nyosegawa/speech.cpp/blob/af6b034918722b65c0f323d984d4644cd4120c77/tools/common/realtime-session.cpp#L437
             drainRequested = true
