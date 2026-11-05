@@ -29,7 +29,7 @@ final class HaasSessionTranscriptTests: XCTestCase {
         ])
         var transcript = HaasSessionTranscript(replacements: plan, vocabulary: vocabulary)
         // 明示的なルールの結果「自販」は、読み (じはん) が登録語と同じでも書き換えない
-        XCTAssertEqual(transcript.commit(id: "a", rawText: "辰美さんのジハン機"), "巽さんの自販機")
-        XCTAssertEqual(transcript.text, "巽さんの自販機")
+        XCTAssertEqual(transcript.commit(id: "a", rawText: "辰美さんのジハンの件"), "巽さんの自販の件")
+        XCTAssertEqual(transcript.text, "巽さんの自販の件")
     }
 }

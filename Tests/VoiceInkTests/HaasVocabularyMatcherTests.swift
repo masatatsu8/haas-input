@@ -112,4 +112,20 @@ final class HaasVocabularyMatcherTests: XCTestCase {
         let matcher = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"], .person)])
         XCTAssertEqual(matcher.apply(to: "辰美部長に連絡"), "辰美部長に連絡")
     }
+
+    func testKanjiWithoutReadingNeverJoinsASpan() {
+        let matcher = HaasVocabularyMatcher(entries: [entry("Haas", ["ハース"], .product)])
+        XCTAssertEqual(matcher.apply(to: "髙 ハース"), "髙 Haas")
+        XCTAssertEqual(matcher.apply(to: "ハース 髙"), "Haas 髙")
+    }
+
+    func testRejectsOnlyParticleEdgedSpans() {
+        let matcher = HaasVocabularyMatcher(entries: [entry("新宿", ["しんじゅく"])])
+        XCTAssertEqual(matcher.apply(to: "しんじゅくのオフィス"), "新宿のオフィス")
+    }
+
+    func testFallsBackToShorterCandidateWhenLongestIsRejected() {
+        let matcher = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"], .person), entry("Tatsumito", ["たつみと"])])
+        XCTAssertEqual(matcher.apply(to: "辰美と話す"), "巽と話す")
+    }
 }

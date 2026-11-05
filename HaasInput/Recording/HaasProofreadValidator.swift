@@ -21,7 +21,13 @@ enum HaasProofreadValidator {
         for term in protectedTerms where !term.isEmpty {
             if occurrences(of: term, in: original) != occurrences(of: term, in: candidate) { return nil }
         }
-        return removingPeriodAfterUnfinishedEnding(candidate, original: original)
+        let result = removingPeriodAfterUnfinishedEnding(candidate, original: original)
+        if hasContent(original), !hasContent(result) { return nil }
+        return result
+    }
+
+    private static func hasContent(_ text: String) -> Bool {
+        text.contains { !$0.isWhitespace && $0 != "、" && $0 != "。" }
     }
 
     /// 続きがある語尾の原文には、モデルが付けた末尾の「。」を残さない。

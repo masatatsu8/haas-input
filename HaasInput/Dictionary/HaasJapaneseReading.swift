@@ -59,9 +59,11 @@ enum HaasJapaneseReading {
                 tokenizer, kCFStringTokenizerAttributeLatinTranscription
             ) as? String
             let reading = transcription.flatMap { $0.applyingTransform(.latinToHiragana, reverse: false) } ?? surface
+            let key = matchKey(reading)
+            // 読みを得られない漢字 (髙・𠮷など) は、照合の対象にしない。
             tokens.append(HaasReadingToken(
-                range: range, surface: surface, key: matchKey(reading),
-                isJapanese: surface.unicodeScalars.contains(where: isJapaneseScalar)
+                range: range, surface: surface, key: key,
+                isJapanese: !key.isEmpty && surface.unicodeScalars.contains(where: isJapaneseScalar)
             ))
         }
         return tokens

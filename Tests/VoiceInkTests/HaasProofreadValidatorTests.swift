@@ -46,4 +46,8 @@ final class HaasProofreadValidatorTests: XCTestCase {
         XCTAssertEqual(HaasProofreadValidator.validatedCandidate(
             "確認します。", preserving: "確認します", protectedTerms: []), "確認します。")
     }
+
+    func testRejectsCandidateThatBecomesEmptyAfterPeriodRemoval() {
+        XCTAssertNil(HaasProofreadValidator.validatedCandidate("。", preserving: "して", protectedTerms: []))
+    }
 }

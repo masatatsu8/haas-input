@@ -338,6 +338,26 @@ final class HaasInputDeliveryTests: XCTestCase {
         XCTAssertEqual(fixture.paster.calls.map(\.text), ["自販の件です"])
     }
 
+    func testProofreadDeliversOriginalWhenCandidateReducesToNothing() async throws {
+        let fixture = try DeliveryFixture()
+        let generator = ControlledPunctuationGenerator()
+        let session = try makeProofreadSession(fixture, worker: proofreadWorker(generator, timeout: .seconds(2)))
+        defer { session.cancel(); generator.cancelPending(); fixture.cleanUp() }
+        try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
+
+        session.receive(.committed(id: "first", text: "して"))
+        await waitUntil { generator.requests.count == 1 }
+        try generator.complete(index: 0, result: .success("。"))
+        await waitUntil { session.recognizedText == "して" && fixture.paster.calls.count == 1 }
+        session.receive(.committed(id: "second", text: "確認します"))
+        await waitUntil { generator.requests.count == 2 }
+        try generator.complete(index: 1, result: .success("確認します。"))
+        await waitUntil { fixture.paster.calls.count == 2 }
+        await fixture.delivery.finish(sessionID: session.sessionID)
+        XCTAssertEqual(fixture.paster.calls.map(\.text).first, "して")
+        XCTAssertEqual(fixture.paster.calls.count, 2)
+    }
+
     private func proofreadWorker(_ generator: ControlledPunctuationGenerator, timeout: Duration) -> HaasPunctuationWorker {
         HaasPunctuationWorker(generator: generator, timeout: timeout) { candidate, original, terms in
             HaasProofreadValidator.validatedCandidate(candidate, preserving: original, protectedTerms: terms)

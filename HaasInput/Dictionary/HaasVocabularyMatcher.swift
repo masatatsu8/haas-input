@@ -47,25 +47,31 @@ struct HaasVocabularyMatcher {
         var cursor = text.startIndex
         var index = 0
         while index < tokens.count {
-            guard tokens[index].isJapanese, let match = longestMatch(from: index, in: tokens, text: text) else {
+            guard tokens[index].isJapanese else {
                 index += 1
                 continue
             }
-            let range = tokens[index].range.lowerBound..<tokens[match.end].range.upperBound
-            let spanTokens = tokens[index...match.end]
-            index = match.end + 1
-            if Self.hasUnsafeBoundary(spanTokens, range: range, in: text) { continue }
-            if blockedRanges.contains(where: { $0.overlaps(range) }) { continue }
-            output += text[cursor..<range.lowerBound]
-            output += match.form
-            cursor = range.upperBound
+            var replaced = false
+            for match in candidates(from: index, in: tokens, text: text).reversed() {
+                let range = tokens[index].range.lowerBound..<tokens[match.end].range.upperBound
+                if Self.hasUnsafeBoundary(tokens[index...match.end], range: range, in: text) { continue }
+                if blockedRanges.contains(where: { $0.overlaps(range) }) { continue }
+                output += text[cursor..<range.lowerBound]
+                output += match.form
+                cursor = range.upperBound
+                index = match.end + 1
+                replaced = true
+                break
+            }
+            if !replaced { index += 1 }
         }
         output += text[cursor...]
         return output
     }
 
-    private func longestMatch(from start: Int, in tokens: [HaasReadingToken], text: String) -> (end: Int, form: String)? {
-        var best: (end: Int, form: String)?
+    /// start から始まる辞書語との一致を、短い順に返す。
+    private func candidates(from start: Int, in tokens: [HaasReadingToken], text: String) -> [(end: Int, form: String)] {
+        var found: [(end: Int, form: String)] = []
         var joined = ""
         var end = start
         while end < tokens.count, end - start < Self.maximumSpanTokens {
@@ -77,17 +83,17 @@ struct HaasVocabularyMatcher {
             }
             joined += token.key
             if let form = formsByKey[HaasJapaneseReading.matchKey(joined)] {
-                best = (end, form)
+                found.append((end, form))
             }
             end += 1
         }
-        return best
+        return found
     }
 
     /// 助詞で始まる/終わる複数語の範囲や、漢字・数字の語の途中で切れる範囲は置換しない。
     private static func hasUnsafeBoundary(_ span: ArraySlice<HaasReadingToken>, range: Range<String.Index>, in text: String) -> Bool {
         if span.count >= 2, let first = span.first, let last = span.last,
-           isHiraganaOnly(first.surface) || isHiraganaOnly(last.surface) {
+           particles.contains(first.surface) || particles.contains(last.surface) {
             return true
         }
         if let first = text[range].first, isKanji(first), range.lowerBound > text.startIndex,
@@ -101,9 +107,9 @@ struct HaasVocabularyMatcher {
         return false
     }
 
-    private static func isHiraganaOnly(_ text: String) -> Bool {
-        !text.isEmpty && text.unicodeScalars.allSatisfy { (0x3041...0x309F).contains($0.value) }
-    }
+    private static let particles: Set<String> = [
+        "は", "が", "を", "に", "で", "と", "も", "へ", "の", "や", "か", "ね", "よ", "から", "まで", "より", "など",
+    ]
 
     private static func isKanji(_ character: Character) -> Bool {
         character.unicodeScalars.contains { scalar in
