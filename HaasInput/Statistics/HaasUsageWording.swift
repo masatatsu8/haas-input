@@ -34,7 +34,7 @@ enum HaasUsageWording {
         if count >= paperbackCharacters {
             return "文庫本 約\(rounded(count, per: paperbackCharacters))冊分"
         }
-        if count >= 20_000 {
+        if count >= shortStoryCharacters {
             return "短編小説 約\(rounded(count, per: shortStoryCharacters))編分"
         }
         if count >= manuscriptPageCharacters {
