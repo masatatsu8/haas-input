@@ -72,6 +72,29 @@ final class HaasHeldPeriodSessionTests: XCTestCase {
         }
     }
 
+    func testLastSegmentFormattedAfterRecognitionEndsKeepsItsPeriodInOnePaste() async throws {
+        // 認識が終わった後に整形が終わる区切りには、もう次が来ない。「。」を別に貼ると約2秒遅れるので、一緒に貼る
+        for mode in [HaasPunctuationMode.natural, .proofread] {
+            let fixture = try DeliveryFixture()
+            let generator = ControlledPunctuationGenerator()
+            let session = try makeSession(fixture, mode: mode, worker: worker(for: mode, generator))
+            defer { session.cancel(); generator.cancelPending(); fixture.cleanUp() }
+            try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
+
+            session.receive(.committed(id: "a", text: "資料です"))
+            await waitUntil { generator.requests.count == 1 }
+            let finishing = Task { try await session.finishAfterRecognition() }
+            await Task.yield()
+            try generator.complete(index: 0, result: .success("資料です。"))
+            let text = try await finishing.value
+
+            XCTAssertEqual(fixture.paster.calls.map(\.text), ["資料です。"], "\(mode)")
+            XCTAssertEqual(text, "資料です。", "\(mode)")
+            XCTAssertEqual(fixture.delivery.ledger.segments.map(\.id), ["a"], "\(mode)")
+            XCTAssertEqual(fixture.delivery.ledger.fullText, text, "\(mode)")
+        }
+    }
+
     func testSegmentArrivingDuringFormattingDecidesThatSegmentsPeriod() async throws {
         let cases: [(next: String, calls: [String])] = [
             ("次も見ます", ["資料です。", "次も見ます", "。"]),
