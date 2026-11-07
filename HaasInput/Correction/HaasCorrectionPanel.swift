@@ -29,6 +29,12 @@ struct HaasCorrectionSessionGate {
     var isOpen: Bool { state == .open }
 }
 
+/// 確定の後に出す知らせ
+struct HaasCorrectionNotice: Equatable {
+    let message: String
+    let type: AppNotificationView.NotificationType
+}
+
 /// ポップアップの状態。直す文と、辞書の候補、その選択を持つ
 @MainActor
 final class HaasCorrectionPanelModel: ObservableObject {
@@ -70,6 +76,25 @@ final class HaasCorrectionPanelModel: ObservableObject {
         case .replacement: return "『\(suggestion.before)』→『\(suggestion.writtenForm)』"
         case .newWord, .addReading: return suggestion.writtenForm
         }
+    }
+
+    /// 確定の結果の知らせ。通知は新しいものが前のものを閉じるので、結果と辞書・履歴のすべての失敗を
+    /// 1つにまとめ、1行ずつ並べる。知らせることがなければ nil
+    static func notice(for outcome: HaasCorrectionOutcome) -> HaasCorrectionNotice? {
+        var lines: [String] = []
+        var isError = false
+        switch outcome.result {
+        case let .copied(message): lines.append(message)
+        case let .failed(message):
+            lines.append(message)
+            isError = true
+        case .unchanged, .replaced: break
+        }
+        for error in outcome.dictionaryErrors { lines.append("辞書に登録できませんでした: \(error)") }
+        if let historyError = outcome.historyError { lines.append(historyError) }
+        if !outcome.dictionaryErrors.isEmpty || outcome.historyError != nil { isError = true }
+        guard !lines.isEmpty else { return nil }
+        return HaasCorrectionNotice(message: lines.joined(separator: "\n"), type: isError ? .error : .info)
     }
 
     /// 選ばれている候補だけ。登録はこれだけにする
@@ -261,7 +286,10 @@ final class HaasCorrectionPanelController: NSObject, NSWindowDelegate {
         coordinator: HaasCorrectionCoordinator,
         notify: @escaping @MainActor (_ message: String, _ type: AppNotificationView.NotificationType) -> Void = {
             message, type in
-            NotificationManager.shared.showNotification(title: message, type: type)
+            // まとめた知らせは行が多いほど長く出す
+            let lines = message.split(separator: "\n", omittingEmptySubsequences: false).count
+            NotificationManager.shared.showNotification(
+                title: message, type: type, duration: max(3.0, 2.5 * Double(lines)))
         }
     ) {
         self.coordinator = coordinator
@@ -332,13 +360,8 @@ final class HaasCorrectionPanelController: NSObject, NSWindowDelegate {
     }
 
     private func report(_ outcome: HaasCorrectionOutcome) {
-        switch outcome.result {
-        case let .copied(message): notify(message, .info)
-        case let .failed(message): notify(message, .error)
-        case .unchanged, .replaced: break
-        }
-        for error in outcome.dictionaryErrors { notify("辞書に登録できませんでした: \(error)", .error) }
-        if let historyError = outcome.historyError { notify(historyError, .error) }
+        guard let notice = HaasCorrectionPanelModel.notice(for: outcome) else { return }
+        notify(notice.message, notice.type)
     }
 
     private func dismissWindow() {

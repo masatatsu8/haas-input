@@ -98,6 +98,42 @@ final class HaasCorrectionPanelModelTests: XCTestCase {
             "巽")
     }
 
+    func testNoticeCombinesResultAndAllErrorsIntoOne() {
+        let outcome = HaasCorrectionOutcome(
+            result: .copied("入れ直しを途中で止めました。⌘V で直した文を貼れます"),
+            dictionaryErrors: ["『巽』の読みが空なので登録しませんでした", "『葛城』: 保存できません"],
+            historyError: "履歴を書き換えられませんでした")
+        XCTAssertEqual(
+            HaasCorrectionPanelModel.notice(for: outcome),
+            HaasCorrectionNotice(
+                message: [
+                    "入れ直しを途中で止めました。⌘V で直した文を貼れます",
+                    "辞書に登録できませんでした: 『巽』の読みが空なので登録しませんでした",
+                    "辞書に登録できませんでした: 『葛城』: 保存できません",
+                    "履歴を書き換えられませんでした",
+                ].joined(separator: "\n"),
+                type: .error))
+    }
+
+    func testNoticeForSingleResults() {
+        XCTAssertNil(HaasCorrectionPanelModel.notice(
+            for: HaasCorrectionOutcome(result: .replaced, dictionaryErrors: [], historyError: nil)))
+        XCTAssertNil(HaasCorrectionPanelModel.notice(
+            for: HaasCorrectionOutcome(result: .unchanged, dictionaryErrors: [], historyError: nil)))
+        XCTAssertEqual(
+            HaasCorrectionPanelModel.notice(
+                for: HaasCorrectionOutcome(result: .copied("コピーしました"), dictionaryErrors: [], historyError: nil)),
+            HaasCorrectionNotice(message: "コピーしました", type: .info))
+        XCTAssertEqual(
+            HaasCorrectionPanelModel.notice(
+                for: HaasCorrectionOutcome(result: .failed("コピーできませんでした"), dictionaryErrors: [], historyError: nil)),
+            HaasCorrectionNotice(message: "コピーできませんでした", type: .error))
+        XCTAssertEqual(
+            HaasCorrectionPanelModel.notice(
+                for: HaasCorrectionOutcome(result: .replaced, dictionaryErrors: [], historyError: "履歴の失敗")),
+            HaasCorrectionNotice(message: "履歴の失敗", type: .error))
+    }
+
     func testSessionGateIgnoresSecondOpenAndSerializesClose() {
         var gate = HaasCorrectionSessionGate()
         XCTAssertTrue(gate.tryOpen())
