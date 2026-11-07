@@ -14,7 +14,7 @@ enum HaasAppConfiguration {
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(AppStorageIdentity.applicationSupportDirectoryName, isDirectory: true))
         UserDefaults.standard.register(defaults: [
-            "clipboardRestoreDelay": 2.0,
+            "clipboardRestoreDelay": 0.5,
             "isSystemMuteEnabled": true,
             "audioResumptionDelay": 0.0,
             "isPauseMediaEnabled": false,
