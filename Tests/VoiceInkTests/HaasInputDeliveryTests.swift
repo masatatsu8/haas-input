@@ -80,7 +80,8 @@ final class HaasInputDeliveryTests: XCTestCase {
 
         let reopened = HaasInputDelivery(
             store: HaasRecoveryStore(fileURL: fixture.fileURL, legacyDefaults: fixture.defaults),
-            textPaster: ControlledTextPaster()
+            textPaster: ControlledTextPaster(),
+            inputMonitor: FakeInputWatcher()
         )
         XCTAssertEqual(reopened.archivedRecoveries.first?.id, oldID)
         XCTAssertEqual(reopened.archivedRecoveries.first?.ledger.uncertainText, "確認が必要な旧文")

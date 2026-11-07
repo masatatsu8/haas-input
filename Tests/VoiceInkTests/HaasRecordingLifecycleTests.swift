@@ -431,7 +431,8 @@ private final class EngineFixture {
         container = try ModelContainer(for: schema, configurations: configuration)
         usageRecorder = recordsUsage ? HaasUsageRecorder(container: container) : nil
         delivery = HaasInputDelivery(
-            store: HaasRecoveryStore(fileURL: recoveryURL, legacyDefaults: defaults), textPaster: NoInputPaster()
+            store: HaasRecoveryStore(fileURL: recoveryURL, legacyDefaults: defaults), textPaster: NoInputPaster(),
+            inputMonitor: LifecycleFakeInputWatcher()
         )
         let persistent = UserDefaults.standard.persistentDomain(forName: "com.tatsumi.VoiceInkHaas.TestsHost") ?? [:]
         let keys = [HaasPunctuationMode.settingsKey, CleanupSettingsKeys.isTranscriptionCleanupEnabled,
@@ -591,4 +592,11 @@ private struct NoInputPaster: HaasTextPasting {
         .init(result: .commandNotPosted)
     }
     func copy(_ text: String) -> Bool { false }
+}
+
+@MainActor
+private final class LifecycleFakeInputWatcher: HaasInputWatching {
+    func startWatching() -> UUID { UUID() }
+    func isClean(for token: UUID) -> Bool { false }
+    func invalidate() {}
 }

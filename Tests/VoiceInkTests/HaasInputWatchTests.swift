@@ -75,4 +75,47 @@ final class HaasInputWatchTests: XCTestCase {
         XCTAssertFalse(watch.isClean(for: fresh))
         XCTAssertFalse(watch.isClean(for: old))
     }
+
+    func testSecondaryShortcutExcludedOnlyWhenInUse() {
+        let primary = Shortcut.key(keyCode: 1, modifierFlags: [.option])
+        let secondary = Shortcut.key(keyCode: 2, modifierFlags: [.option])
+        XCTAssertEqual(
+            HaasUserInputMonitor.excludedShortcuts(
+                primarySelection: .custom, primary: primary,
+                secondarySelection: .none, secondary: secondary, correction: nil),
+            [primary])
+        XCTAssertEqual(
+            HaasUserInputMonitor.excludedShortcuts(
+                primarySelection: .custom, primary: primary,
+                secondarySelection: .custom, secondary: secondary, correction: nil),
+            [primary, secondary])
+        // 取消・直前の認識結果・履歴のキーは、除外の一覧を作る入力に含まれない
+        let others = [ShortcutAction.cancelRecorder, .pasteLastTranscription, .openQuickHistory]
+        XCTAssertFalse(others.contains(.primaryRecording) || others.contains(.secondaryRecording))
+    }
+
+    func testMonitorIsNotCleanWhenGlobalMonitorCannotBeCreated() {
+        let monitor = HaasUserInputMonitor(
+            excludedShortcutsProvider: { [] }, isAccessibilityTrusted: { true }, makeGlobalMonitor: { _ in nil })
+        XCTAssertFalse(monitor.isClean(for: monitor.startWatching()))
+    }
+
+    func testMonitorIsNotCleanWhenAccessibilityIsLost() {
+        var trusted = true
+        let monitor = HaasUserInputMonitor(
+            excludedShortcutsProvider: { [] }, isAccessibilityTrusted: { trusted }, makeGlobalMonitor: { _ in NSObject() })
+        let token = monitor.startWatching()
+        XCTAssertTrue(monitor.isClean(for: token))
+        trusted = false
+        XCTAssertFalse(monitor.isClean(for: token))
+    }
+
+    func testProviderIsReadOncePerWatch() {
+        var reads = 0
+        let monitor = HaasUserInputMonitor(
+            excludedShortcutsProvider: { reads += 1; return [] }, isAccessibilityTrusted: { true },
+            makeGlobalMonitor: { _ in NSObject() })
+        _ = monitor.startWatching()
+        XCTAssertEqual(reads, 1)
+    }
 }

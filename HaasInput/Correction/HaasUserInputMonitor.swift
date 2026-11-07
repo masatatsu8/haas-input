@@ -74,6 +74,7 @@ final class HaasUserInputMonitor: HaasInputWatching {
 
     private var watch = HaasInputWatch()
     private var globalMonitor: Any?
+    private var excludedShortcuts: [Shortcut] = []
     private let excludedShortcutsProvider: () -> [Shortcut]
     private let isAccessibilityTrusted: () -> Bool
     private let makeGlobalMonitor: (@escaping (NSEvent) -> Void) -> Any?
@@ -96,27 +97,47 @@ final class HaasUserInputMonitor: HaasInputWatching {
         [primary, secondary, correction].compactMap { $0 }
     }
 
-    /// 既定の除外。有効な録音のショートカット (1つ目と、「使用しない」でない2つ目) を保存内容から取る。
+    /// 選択 (「指定する」か「使用しない」か) を踏まえた除外の一覧。「使用しない」の録音ショートカットは除外しない。
+    static func excludedShortcuts(
+        primarySelection: RecordingShortcutManager.ShortcutSelection, primary: Shortcut?,
+        secondarySelection: RecordingShortcutManager.ShortcutSelection, secondary: Shortcut?,
+        correction: Shortcut?
+    ) -> [Shortcut] {
+        excludedShortcuts(
+            primary: primarySelection == .custom ? primary : nil,
+            secondary: secondarySelection == .custom ? secondary : nil,
+            correction: correction)
+    }
+
+    /// 既定の除外。保存内容を読むだけで、移行や書き込みはしない。
     /// 訂正のショートカットは、その操作が加わる段階で足す。
     static func defaultExcludedShortcuts() -> [Shortcut] {
-        let primary = ShortcutMigration.migrateShortcutSelection(action: .primaryRecording, allowsNone: false)
-        let secondary = ShortcutMigration.migrateShortcutSelection(action: .secondaryRecording, allowsNone: true)
+        let defaults = UserDefaults.standard
+        func selection(_ key: String, fallback: RecordingShortcutManager.ShortcutSelection)
+            -> RecordingShortcutManager.ShortcutSelection
+        {
+            defaults.string(forKey: key).flatMap(RecordingShortcutManager.ShortcutSelection.init(rawValue:))
+                ?? fallback
+        }
         return excludedShortcuts(
-            primary: primary == .custom ? ShortcutStore.shortcut(for: .primaryRecording) : nil,
-            secondary: secondary == .custom ? ShortcutStore.shortcut(for: .secondaryRecording) : nil,
+            primarySelection: .custom, primary: ShortcutStore.shortcut(for: .primaryRecording),
+            secondarySelection: selection("secondaryRecordingShortcut", fallback: .none),
+            secondary: ShortcutStore.shortcut(for: .secondaryRecording),
             correction: nil)
     }
 
     func startWatching() -> UUID {
         let token = watch.start()
+        // 除外の一覧は見張りを始めた時点の保存内容で固定する (イベントごとに読まない)
+        excludedShortcuts = excludedShortcutsProvider()
         if globalMonitor == nil {
             globalMonitor = makeGlobalMonitor { [weak self] event in
                 guard let observed = Self.observedInput(from: event) else { return }
                 let isOwn = event.cgEvent?.getIntegerValueField(.eventSourceUserData) == HaasSyntheticInput.marker
-                Task { @MainActor [weak self] in
+                // 全体監視はメインスレッドで呼ばれる。記録を遅らせると、操作の後に clean と答えうるので同期で記録する
+                MainActor.assumeIsolated {
                     guard let self else { return }
-                    self.watch.record(
-                        observed, isOwnEvent: isOwn, shortcuts: self.excludedShortcutsProvider())
+                    self.watch.record(observed, isOwnEvent: isOwn, shortcuts: self.excludedShortcuts)
                 }
             }
         }
