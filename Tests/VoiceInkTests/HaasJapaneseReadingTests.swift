@@ -20,4 +20,11 @@ final class HaasJapaneseReadingTests: XCTestCase {
         let text = "辰美さんとJiHAN 2"
         XCTAssertTrue(tokens.allSatisfy { String(text[$0.range]) == $0.surface })
     }
+
+    func testTokenKeepsHiraganaReadingBeforeNormalization() {
+        let token = HaasJapaneseReading.tokens(in: "東京").first
+        XCTAssertEqual(token?.reading, "とうきょう")
+        XCTAssertEqual(token?.key, "とおきょお")
+        XCTAssertEqual(token?.hasReading, true)
+    }
 }
