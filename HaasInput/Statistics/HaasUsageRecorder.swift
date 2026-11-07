@@ -13,14 +13,20 @@ final class HaasUsageRecorder: ObservableObject {
 
     private let context: ModelContext
     private let save: (ModelContext) throws -> Void
+    private let fetchMetrics: (ModelContext) throws -> [SessionMetric]
     /// 前回の保存に失敗して、まだ統計に入っていない分
     private var pending: [UUID: HaasUsageSample] = [:]
     private let logger = Logger(subsystem: "com.tatsumi.VoiceInkHaas", category: "UsageRecorder")
 
-    init(container: ModelContainer, save: @escaping (ModelContext) throws -> Void = { try $0.save() }) {
+    init(
+        container: ModelContainer,
+        save: @escaping (ModelContext) throws -> Void = { try $0.save() },
+        fetchMetrics: @escaping (ModelContext) throws -> [SessionMetric] = HaasUsageRecorder.fetchStoredMetrics
+    ) {
         context = ModelContext(container)
         context.autosaveEnabled = false
         self.save = save
+        self.fetchMetrics = fetchMetrics
     }
 
     /// 履歴 (保存済みの行だけ) を読み、統計にない分を書き足して `samples` を更新する。
@@ -36,12 +42,20 @@ final class HaasUsageRecorder: ObservableObject {
             return
         }
 
-        // 統計の読み込みに失敗したら、重複して挿入しないよう何も書かずに戻る
+        // 統計の読み込みに失敗したら、重複して挿入しないよう何も書かずに戻る。
+        // 履歴はこの後に消えうるので、対象の行は値にして保留し、次の同期で入れ直す
         var known: Set<UUID>
         do {
             known = Set(try storedMetrics().map(\.transcriptionId))
         } catch {
             logger.error("利用記録の読み込みに失敗: \(error.localizedDescription, privacy: .private)")
+            for row in rows where row.transcriptionStatus == completed {
+                let characters = HaasUsageSample.characterCount(row.text)
+                guard characters > 0, pending[row.id] == nil else { continue }
+                pending[row.id] = HaasUsageSample(
+                    timestamp: row.timestamp, duration: row.duration, characters: characters
+                )
+            }
             return
         }
         var attempted: [UUID: HaasUsageSample] = [:]
@@ -80,6 +94,10 @@ final class HaasUsageRecorder: ObservableObject {
     }
 
     private func storedMetrics() throws -> [SessionMetric] {
+        try fetchMetrics(context)
+    }
+
+    private static func fetchStoredMetrics(_ context: ModelContext) throws -> [SessionMetric] {
         let source = Self.source
         return try context.fetch(FetchDescriptor<SessionMetric>(
             predicate: #Predicate { $0.source == source }

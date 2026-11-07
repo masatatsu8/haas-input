@@ -68,7 +68,8 @@ struct HaasUsageSummary: Equatable, Sendable {
             byDay[key] ?? HaasUsageDay(day: key, duration: 0, characters: 0, recordings: 0)
         }
         func offset(_ key: Date, days: Int) -> Date {
-            calendar.date(byAdding: .day, value: days, to: key) ?? key
+            // 夏時間が0時に始まる地域でも日の境目に揃える
+            calendar.date(byAdding: .day, value: days, to: key).map { calendar.startOfDay(for: $0) } ?? key
         }
 
         let todayKey = calendar.startOfDay(for: now)

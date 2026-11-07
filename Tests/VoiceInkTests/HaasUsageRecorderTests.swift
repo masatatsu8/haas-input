@@ -93,17 +93,43 @@ final class HaasUsageRecorderTests: XCTestCase {
         try history.save()
 
         var calls = 0
-        let recorder = HaasUsageRecorder(container: container) { context in
+        let recorder = HaasUsageRecorder(container: container, save: { context in
             calls += 1
             if calls == 1 { throw SaveFailure() }
             try context.save()
-        }
+        })
         recorder.sync(from: history)
 
         XCTAssertFalse(history.hasChanges)
         XCTAssertEqual(recorder.samples.count, 1)
         XCTAssertEqual(try metrics(container).count, 0)
 
+        history.delete(row)
+        try history.save()
+        recorder.sync(from: history)
+
+        XCTAssertEqual(try metrics(container).count, 1)
+        XCTAssertEqual(recorder.samples.count, 1)
+    }
+
+    func testStatsReadFailureKeepsRowsPendingAndStoresThemOnce() throws {
+        let container = try makeContainer()
+        let history = container.mainContext
+        let row = insert("こんにちは", into: history)
+        try history.save()
+
+        var reads = 0
+        let recorder = HaasUsageRecorder(container: container, fetchMetrics: { (context: ModelContext) throws -> [SessionMetric] in
+            reads += 1
+            if reads == 1 { throw SaveFailure() }
+            let source = HaasUsageRecorder.source
+            let descriptor = FetchDescriptor<SessionMetric>(predicate: #Predicate { $0.source == source })
+            return try context.fetch(descriptor)
+        })
+        recorder.sync(from: history)
+        XCTAssertEqual(try metrics(container).count, 0)
+
+        // 履歴が消えても、保留した分が次の同期で一度だけ入る
         history.delete(row)
         try history.save()
         recorder.sync(from: history)

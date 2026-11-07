@@ -166,15 +166,11 @@ private enum UsagePalette {
 }
 
 private enum UsageDateText {
-    private static let japanese: Calendar = {
-        var calendar = Calendar.current
-        calendar.locale = Locale(identifier: "ja_JP")
-        return calendar
-    }()
-
-    /// 「日」「月」… の1文字
+    /// 「日」「月」… の1文字。集計と同じ現在の暦で、描画のたびに求める。
     static func weekday(_ date: Date) -> String {
-        japanese.veryShortWeekdaySymbols[japanese.component(.weekday, from: date) - 1]
+        var japanese = Calendar.current
+        japanese.locale = Locale(identifier: "ja_JP")
+        return japanese.veryShortWeekdaySymbols[japanese.component(.weekday, from: date) - 1]
     }
 
     /// 「11月7日 12分 ・ 2,340文字」。使っていない日は日付だけ。

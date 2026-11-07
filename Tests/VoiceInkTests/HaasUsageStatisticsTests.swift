@@ -128,6 +128,18 @@ final class HaasUsageStatisticsTests: XCTestCase {
         XCTAssertEqual(single.level(for: single.today), 4)
     }
 
+    func testDayStepsStayAtMidnightWhenDSTStartsAtMidnight() {
+        var santiago = calendar
+        santiago.timeZone = TimeZone(identifier: "America/Santiago")!
+        func at(_ d: Int, _ h: Int) -> Date {
+            santiago.date(from: DateComponents(year: 2026, month: 9, day: d, hour: h))!
+        }
+        let samples = (3...6).map { sample(at($0, 12)) }
+        let result = HaasUsageSummary(samples: samples, now: at(6, 15), calendar: santiago)
+        XCTAssertEqual(result.currentStreak, 4)
+        XCTAssertEqual(result.lastSevenDays.map(\.isUsed), [false, false, false, true, true, true, true])
+    }
+
     func testEmptySamplesProduceEmptySummary() {
         let result = summary([])
         XCTAssertEqual(result.usedDays, 0)
