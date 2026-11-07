@@ -150,6 +150,28 @@ final class HaasUsageRecorderTests: XCTestCase {
         XCTAssertEqual(legacy.first?.wordCount, 7)
     }
 
+    func testNilSourceLegacyMetricIsIgnoredAndKept() throws {
+        let container = try makeContainer()
+        let history = container.mainContext
+        let row = insert("こんにちは", into: history)
+        try history.save()
+        history.insert(SessionMetric(
+            transcriptionId: row.id, source: nil, wordCount: 7, audioDuration: 1,
+            transcriptionModelName: nil, transcriptionDuration: nil, speedFactor: nil,
+            modeName: nil, aiEnhancementModelName: nil, enhancementDuration: nil
+        ))
+        try history.save()
+
+        let recorder = HaasUsageRecorder(container: container)
+        recorder.sync(from: history)
+
+        // 文字数は本文から数え、source が nil の旧記録は参照せず、削除もしない
+        XCTAssertEqual(recorder.samples.map(\.characters), [5])
+        let legacy = try metrics(container).filter { $0.source == nil }
+        XCTAssertEqual(legacy.count, 1)
+        XCTAssertEqual(legacy.first?.wordCount, 7)
+    }
+
     func testStatisticsPersistAcrossReopenWithRealConfigurations() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("HaasUsageRecorder-\(UUID().uuidString)", isDirectory: true)

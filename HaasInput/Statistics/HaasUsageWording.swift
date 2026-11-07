@@ -73,9 +73,11 @@ enum HaasUsageWording {
         let minutes = max(1, Int((average / 60).rounded()))
         let detail = "最近の1日平均は約\(minutes)分です"
         guard summary.today.isUsed else { return (notUsedToday, detail) }
-        let ratio = summary.today.duration / average
-        if ratio >= 1 { return ("いつもを超えました。いい調子です", detail) }
-        return ("いつもの\(Int(ratio * 100))%まで来ました", detail)
+        let today = summary.today.duration
+        if today >= average { return ("いつもを超えました。いい調子です", detail) }
+        // 先に100倍してから割り、浮動小数の誤差を避けて切り捨てる。0%と100%は表示しない
+        let percent = min(99, max(1, Int((today * 100 / average).rounded(.down))))
+        return ("いつもの\(percent)%まで来ました", detail)
     }
 
     /// 今日 ÷ 平均 (0〜1)。平均がなければ 0。

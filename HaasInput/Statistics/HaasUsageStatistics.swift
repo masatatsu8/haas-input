@@ -78,7 +78,11 @@ struct HaasUsageSummary: Equatable, Sendable {
         // 暦の週の始まり (calendar.firstWeekday) から数えた53週分
         let weekStart = calendar.dateInterval(of: .weekOfYear, for: todayKey)?.start ?? todayKey
         let gridStart = offset(weekStart, days: -7 * (Self.gridWeeks - 1))
-        grid = (0..<(7 * Self.gridWeeks)).map { day(offset(gridStart, days: $0)) }
+        // 今日より後の日は、時計のずれなどで未来の記録があっても未使用として扱う
+        grid = (0..<(7 * Self.gridWeeks)).map { index in
+            let key = offset(gridStart, days: index)
+            return key > todayKey ? HaasUsageDay(day: key, duration: 0, characters: 0, recordings: 0) : day(key)
+        }
 
         let all = Array(byDay.values)
         totalDuration = all.reduce(0) { $0 + $1.duration }

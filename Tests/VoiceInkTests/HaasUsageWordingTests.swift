@@ -106,6 +106,24 @@ final class HaasUsageWordingTests: XCTestCase {
         }
     }
 
+    func testComparisonPercentIsFlooredWithoutFloatErrorAndClamped() {
+        // 1%未満でも「0%」とは言わず、1%に収める
+        XCTAssertEqual(
+            HaasUsageWording.comparison(summary(today: (5, 10))).headline,
+            "いつもの1%まで来ました"
+        )
+        // 570 / 1000 は浮動小数の誤差で56%になりやすい境界
+        XCTAssertEqual(
+            HaasUsageWording.comparison(summary(average: 1000, today: (570, 10))).headline,
+            "いつもの57%まで来ました"
+        )
+        // 平均に届く直前でも100%とは表示しない
+        XCTAssertEqual(
+            HaasUsageWording.comparison(summary(average: 1000, today: (995, 10))).headline,
+            "いつもの99%まで来ました"
+        )
+    }
+
     func testStreakMessageOnlyFromTwoDays() {
         XCTAssertNil(HaasUsageWording.streak(summary(today: (10, 10))))
         XCTAssertEqual(

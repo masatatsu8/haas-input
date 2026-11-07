@@ -103,6 +103,16 @@ final class HaasUsageStatisticsTests: XCTestCase {
         XCTAssertFalse(result.grid.last!.isUsed)
     }
 
+    func testFutureSampleDoesNotMarkGridDaysAfterTodayOrCountAsToday() {
+        let wednesday = date(2026, 11, 4, 9)
+        let thursday = date(2026, 11, 5, 9)
+        let result = HaasUsageSummary(samples: [sample(thursday)], now: wednesday, calendar: calendar)
+        let todayKey = calendar.startOfDay(for: wednesday)
+        XCTAssertFalse(result.today.isUsed)
+        XCTAssertEqual(result.today.characters, 0)
+        XCTAssertTrue(result.grid.filter { $0.day > todayKey }.allSatisfy { !$0.isUsed })
+    }
+
     func testLevelsUseQuartilesOfUsedDays() {
         // 今日から7日前までの8日分 (古い日から 10, 20, ... 80 字)
         let samples = (0..<8).map { sample(date(2026, 10, 31 + $0), characters: ($0 + 1) * 10) }
