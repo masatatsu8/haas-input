@@ -39,6 +39,7 @@
 		1571DF48A188A4C5BA143583 /* HaasPendingInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEA342AB91F55FFE695B8A00 /* HaasPendingInputView.swift */; };
 		15DA0B340285717405BCD388 /* HaasPTTRecordingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B97D90AE7E1C3C93CE8231 /* HaasPTTRecordingTests.swift */; };
 		16466264CEAEB2341FD2E88D /* UserSessionInputPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49188D313C5797CADC3C8CFF /* UserSessionInputPolicy.swift */; };
+		1702F0FBED615D5FD2D75EC9 /* HaasCorrectionCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1804138F0A2D17AA96F3919E /* HaasCorrectionCoordinatorTests.swift */; };
 		1966FE8CAE13D4889D28175E /* HaasInputDeliveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 174526B88CEDD0D03E9AFBE7 /* HaasInputDeliveryTests.swift */; };
 		1A0AA1B1A6CE5411572EF1CD /* CoreAudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D969EB792C773CC5D8357E73 /* CoreAudioRecorder.swift */; };
 		1ACD2686DC8699B23E8BEF0F /* AudioInputChannelSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25C1853918ACF6B67B37181 /* AudioInputChannelSelection.swift */; };
@@ -58,6 +59,7 @@
 		26994B4F98DA52DD745A9181 /* CursorPaster.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7841AA5826AFCF8E7ECCCA1 /* CursorPaster.swift */; };
 		26F9A53EA7E228530DE0413F /* sound5.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 46FD9BA8A8DA5BF547CC1366 /* sound5.mp3 */; };
 		274766775C59AD6FC0406B8E /* HaasWordReplacementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA4A246092E5D5B909860753 /* HaasWordReplacementStore.swift */; };
+		2864C2E2F9C5A6B7B9EA736A /* HaasCorrectionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B670713C6BF03AF9489614 /* HaasCorrectionCoordinator.swift */; };
 		28E9A20548459BF80747C618 /* MediaRemoteAdapter-Notices.txt in Resources */ = {isa = PBXBuildFile; fileRef = CB435C8069F26950FBB43CB5 /* MediaRemoteAdapter-Notices.txt */; };
 		2AA9B53B2D7120CF3B1FCB50 /* UserDefaultsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138FDA68F21CF0FCF6986461 /* UserDefaultsManager.swift */; };
 		2B148A516BF4CC4F80459144 /* ClamshellStateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDCC9B7EC02CA0F0D6A7C51 /* ClamshellStateMonitor.swift */; };
@@ -203,12 +205,14 @@
 		AAC3F2F985C09DEEAF7A9D86 /* ClipboardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6282B7F34242528A912E2155 /* ClipboardManager.swift */; };
 		AB45D3AC4A82F46862A3E295 /* RecordingShortcutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6137BB0B5AA89F13F5DEA39B /* RecordingShortcutManager.swift */; };
 		ADA3DBB9B64379CC55191940 /* HaasSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64F68AF12D120E819F86EA8F /* HaasSettingsStore.swift */; };
+		AE0C4C34182A51124DDAC96A /* HaasCorrectionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B670713C6BF03AF9489614 /* HaasCorrectionCoordinator.swift */; };
 		AE85ECD36733FA0B689AAAD1 /* AppNotificationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2518E874C6AB20755EE871D /* AppNotificationView.swift */; };
 		B003416A5490874B714B673E /* HaasMenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E46C0B4879D804569B2B6E /* HaasMenuBarView.swift */; };
 		B1567D97351119638E9FB362 /* AppStorageIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1715638023F1FB22206ED0A4 /* AppStorageIdentity.swift */; };
 		B51AB361E4BDCFB666074633 /* AudioInputChannelSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25C1853918ACF6B67B37181 /* AudioInputChannelSelection.swift */; };
 		B5706DCC88C151C5E023E158 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = 62489E441276F76B99811094 /* MediaRemoteAdapter */; };
 		B6085002355505A848D05F37 /* HaasProofreadValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D3DBBAD3F5C6BD04E34B418 /* HaasProofreadValidatorTests.swift */; };
+		B6C6CD0BA99BF38F0C814831 /* HaasCorrectionAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70439732DE8058B8FAABAB23 /* HaasCorrectionAdapters.swift */; };
 		B733071E9B50B9EA9C5DB43D /* RecorderScreenResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B4C956D6CB8714452E4533 /* RecorderScreenResolver.swift */; };
 		B838F36C021F8B768FB61D7C /* HaasModelAssetFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02F434F76626482D43557F7F /* HaasModelAssetFixture.swift */; };
 		B885941078B9C4D7A85293F7 /* HaasPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 708ECAB1E987855FD53F5709 /* HaasPersistence.swift */; };
@@ -294,6 +298,7 @@
 		FB989C1AB101AF334452B6F0 /* HaasSessionTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA002A70634D247A918F9BAE /* HaasSessionTranscript.swift */; };
 		FC5513FA4498326C70D2DD8C /* HaasUsageStatisticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE60B6FE73393F2DA195919F /* HaasUsageStatisticsTests.swift */; };
 		FC9934B617A9E2642EA3720C /* AudioSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19A67C6420389E260F3F66AB /* AudioSetupView.swift */; };
+		FCE3A30D4E3227D44168B86F /* HaasCorrectionAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70439732DE8058B8FAABAB23 /* HaasCorrectionAdapters.swift */; };
 		FE164BFBF5E4EA6B8B6CB16C /* HaasWordReplacementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272BA3FBCFD31078A937973D /* HaasWordReplacementView.swift */; };
 /* End PBXBuildFile section */
 
@@ -348,6 +353,7 @@
 		1669B96CD439EE39470DF536 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManager.swift; sourceTree = "<group>"; };
 		1715638023F1FB22206ED0A4 /* AppStorageIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStorageIdentity.swift; sourceTree = "<group>"; };
 		174526B88CEDD0D03E9AFBE7 /* HaasInputDeliveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasInputDeliveryTests.swift; sourceTree = "<group>"; };
+		1804138F0A2D17AA96F3919E /* HaasCorrectionCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasCorrectionCoordinatorTests.swift; sourceTree = "<group>"; };
 		19A67C6420389E260F3F66AB /* AudioSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSetupView.swift; sourceTree = "<group>"; };
 		19B3045F0E3FA9A867095B3A /* MediaController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaController.swift; sourceTree = "<group>"; };
 		1C47DE67B9F0A5780D97E14E /* AudioDeviceManager+RecordingRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioDeviceManager+RecordingRouting.swift"; sourceTree = "<group>"; };
@@ -414,6 +420,7 @@
 		6C20FCBD32F5933C91876B08 /* HaasCorrectionSuggesterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasCorrectionSuggesterTests.swift; sourceTree = "<group>"; };
 		6F25B182A7C64B0EC4582C97 /* HaasRuntimeConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasRuntimeConfiguration.swift; sourceTree = "<group>"; };
 		6F28D827A11E275AA6B6BB9C /* ShortcutMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutMigration.swift; sourceTree = "<group>"; };
+		70439732DE8058B8FAABAB23 /* HaasCorrectionAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasCorrectionAdapters.swift; sourceTree = "<group>"; };
 		708ECAB1E987855FD53F5709 /* HaasPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasPersistence.swift; sourceTree = "<group>"; };
 		71DE770EE321BE66DFEEC5BC /* FoundationModels.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FoundationModels.framework; path = System/Library/Frameworks/FoundationModels.framework; sourceTree = SDKROOT; };
 		72CEFD54F3ADE84F37866EE3 /* HaasUsageRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasUsageRecorder.swift; sourceTree = "<group>"; };
@@ -454,6 +461,7 @@
 		ADDA59CBF8D33CE1BE3CF471 /* HaasRecorderSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasRecorderSurface.swift; sourceTree = "<group>"; };
 		B111E3C60CDCBFBA21745CF5 /* HaasPermissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasPermissions.swift; sourceTree = "<group>"; };
 		B2BB72A39394EC3DADC49A7F /* HaasTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasTransportTests.swift; sourceTree = "<group>"; };
+		B3B670713C6BF03AF9489614 /* HaasCorrectionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasCorrectionCoordinator.swift; sourceTree = "<group>"; };
 		B6F7E2CF924C81E606403B97 /* AudioInputChannelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioInputChannelsView.swift; sourceTree = "<group>"; };
 		B95E73F5F10DE4099470532E /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		BA7BA02DD99D2ACD7E4FECAD /* HaasPunctuationMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasPunctuationMode.swift; sourceTree = "<group>"; };
@@ -725,6 +733,7 @@
 				2E976D7F222A4FC74EFF6A6A /* CursorPasterClipboardTests.swift */,
 				1D0E3AEF278D3A363D35E897 /* CursorPasterReplacementTests.swift */,
 				BC523E0C12580B887B6DD167 /* Fixtures */,
+				1804138F0A2D17AA96F3919E /* HaasCorrectionCoordinatorTests.swift */,
 				6C20FCBD32F5933C91876B08 /* HaasCorrectionSuggesterTests.swift */,
 				53A761276000597567255A3E /* HaasDeliveryTests.swift */,
 				F5C409CCCB7185C642A448D7 /* HaasFieldStateTests.swift */,
@@ -920,6 +929,8 @@
 		FDDAA4DAAF23EE5B4AF81AA1 /* Correction */ = {
 			isa = PBXGroup;
 			children = (
+				70439732DE8058B8FAABAB23 /* HaasCorrectionAdapters.swift */,
+				B3B670713C6BF03AF9489614 /* HaasCorrectionCoordinator.swift */,
 				205BA2C0ED5359D96013909D /* HaasCorrectionSuggester.swift */,
 				24578DB838FE63ED12A99B2D /* HaasReplacementDecision.swift */,
 				88AFAA9F24D6F5F5C53A2808 /* HaasUserInputMonitor.swift */,
@@ -1107,6 +1118,8 @@
 				1BCD0C67A548FE20AA1552C8 /* HaasAppModel.swift in Sources */,
 				A6A2EFD1AA93B3F038693240 /* HaasApplePunctuationGenerator.swift in Sources */,
 				095779A590AFF696043A6F49 /* HaasApplicationDelegate.swift in Sources */,
+				FCE3A30D4E3227D44168B86F /* HaasCorrectionAdapters.swift in Sources */,
+				2864C2E2F9C5A6B7B9EA736A /* HaasCorrectionCoordinator.swift in Sources */,
 				68D5A5E9FC7CA5085CB60D97 /* HaasCorrectionSuggester.swift in Sources */,
 				632EA0268B42C5E3DC3046A2 /* HaasDictationSession.swift in Sources */,
 				3D0A51E78D33C7309CF82C4C /* HaasDictionaryView.swift in Sources */,
@@ -1210,6 +1223,7 @@
 				9E100F7C1A05945A7BAB4E32 /* CleanupDefaultsMigrationTests.swift in Sources */,
 				84BDD3968770027083C107E6 /* CursorPasterClipboardTests.swift in Sources */,
 				F7D94F165C9991B72CD9BE8C /* CursorPasterReplacementTests.swift in Sources */,
+				1702F0FBED615D5FD2D75EC9 /* HaasCorrectionCoordinatorTests.swift in Sources */,
 				7EE51F51942B0C22F735E1C8 /* HaasCorrectionSuggesterTests.swift in Sources */,
 				5A29E738783B53A9ACAC5726 /* HaasDeliveryTests.swift in Sources */,
 				0D5B03BC3A733F53758CE3A9 /* HaasFieldStateTests.swift in Sources */,
@@ -1267,6 +1281,8 @@
 				C5A0F2411F251EB07DF4AB25 /* HaasAppModel.swift in Sources */,
 				8E313879403F5D218B41CD32 /* HaasApplePunctuationGenerator.swift in Sources */,
 				11FE7DF255C54CDEC42B6826 /* HaasApplicationDelegate.swift in Sources */,
+				B6C6CD0BA99BF38F0C814831 /* HaasCorrectionAdapters.swift in Sources */,
+				AE0C4C34182A51124DDAC96A /* HaasCorrectionCoordinator.swift in Sources */,
 				24ADDB564215AF4608451C16 /* HaasCorrectionSuggester.swift in Sources */,
 				8AAA2E72FD34F550F6D8C882 /* HaasDictationSession.swift in Sources */,
 				A76BF386E984599F21414A5A /* HaasDictionaryView.swift in Sources */,

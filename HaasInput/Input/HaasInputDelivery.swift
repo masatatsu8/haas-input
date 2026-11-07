@@ -191,8 +191,25 @@ extension HaasFieldState {
 
 enum HaasRecoveryCopyKind: Equatable { case pending, uncertain }
 
+/// 直前の録音1回分の入力。訂正の判定に使う
+struct HaasDeliveredInput {
+    let sessionID: UUID
+    let transcriptionID: UUID?
+    let text: String
+    /// 区切りがすべて posted で、かつ1つ以上ある
+    let allSegmentsPosted: Bool
+    let target: (any HaasInputTargetChecking)?
+    /// この録音の開始で始めた見張りの印 (別の回の印は返さない)
+    let watchToken: UUID?
+}
+
 @MainActor
-final class HaasInputDelivery: ObservableObject {
+protocol HaasDeliveredInputProviding: AnyObject {
+    var lastDeliveredInput: HaasDeliveredInput? { get }
+}
+
+@MainActor
+final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
     static let shared = HaasInputDelivery(
         store: HaasRecoveryStore(), textPaster: HaasSystemTextPaster(), inputMonitor: HaasUserInputMonitor.shared)
 
@@ -206,6 +223,8 @@ final class HaasInputDelivery: ObservableObject {
     private let inputMonitor: any HaasInputWatching
     /// 録音の開始で始めた、入力後の操作の見張りの印
     private(set) var watchToken: UUID?
+    /// watchToken を始めた録音。begin が失敗しても前回の印と記録の組が崩れないように持つ
+    private var watchSessionID: UUID?
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "HaasInputDelivery")
     private var loadFailure: Error?
     private var persistenceFailure: Error?
@@ -227,6 +246,19 @@ final class HaasInputDelivery: ObservableObject {
     }
     var pendingText: String { ledger.pendingText }
     var uncertainText: String { ledger.uncertainText }
+
+    /// 直前の録音の入力。記録がない、録音中、開始の途中、貼り付け中は nil
+    var lastDeliveredInput: HaasDeliveredInput? {
+        guard let record = state.active, runningSessionID == nil, pendingBeginID == nil, drainTask == nil else {
+            return nil
+        }
+        let segments = record.ledger.segments
+        return HaasDeliveredInput(
+            sessionID: record.id, transcriptionID: record.transcriptionID, text: record.ledger.fullText,
+            allSegmentsPosted: !segments.isEmpty && segments.allSatisfy { $0.disposition == .posted },
+            target: target, watchToken: watchSessionID == record.id ? watchToken : nil)
+    }
+
     private var nextReadySegment: HaasSegmentLedger.Segment? {
         guard let first = ledger.nextPendingSegment, formattingHolds[first.id] == nil else { return nil }
         return first
@@ -296,6 +328,7 @@ final class HaasInputDelivery: ObservableObject {
         message = target == nil ? "入力先を確認できません。認識結果は保留し、コピーできます。" : ""
         recoveryError = nil
         watchToken = inputMonitor.startWatching()
+        watchSessionID = sessionID
         logger.notice("delivery phase=begin session=\(sessionID.uuidString, privacy: .public) archives=\(candidate.archives.count, privacy: .public)")
     }
 

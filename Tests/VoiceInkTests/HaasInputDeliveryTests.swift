@@ -12,6 +12,57 @@ final class HaasInputDeliveryTests: XCTestCase {
         XCTAssertEqual(fixture.delivery.watchToken, fixture.monitor.lastToken)
     }
 
+    func testLastDeliveredInputPairsRecordWithItsOwnWatchToken() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        XCTAssertNil(fixture.delivery.lastDeliveredInput)
+        let first = UUID(), transcriptionID = UUID()
+        try await fixture.delivery.begin(sessionID: first, target: AvailableInputTarget())
+        fixture.delivery.accept(sessionID: first, itemID: "item-1", text: "前半、")
+        fixture.delivery.accept(sessionID: first, itemID: "item-2", text: "後半。")
+        // 録音中は直前の入力として扱わない
+        XCTAssertNil(fixture.delivery.lastDeliveredInput)
+        await fixture.delivery.finish(sessionID: first)
+        fixture.delivery.attachTranscription(sessionID: first, transcriptionID: transcriptionID)
+
+        let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertEqual(input.sessionID, first)
+        XCTAssertEqual(input.transcriptionID, transcriptionID)
+        XCTAssertEqual(input.text, "前半、後半。")
+        XCTAssertTrue(input.allSegmentsPosted)
+        XCTAssertNotNil(input.target)
+        let firstToken = try XCTUnwrap(fixture.monitor.lastToken)
+        XCTAssertEqual(input.watchToken, firstToken)
+
+        // 開始に失敗しても、前回の記録と前回の印の組のまま返す
+        try fixture.breakStorageDirectory()
+        do {
+            try await fixture.delivery.begin(sessionID: UUID(), target: AvailableInputTarget())
+            XCTFail("保存できない開始は失敗する")
+        } catch {}
+        let afterFailure = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertEqual(afterFailure.sessionID, first)
+        XCTAssertEqual(afterFailure.watchToken, firstToken)
+    }
+
+    func testLastDeliveredInputIsNotAllPostedWhenHeldOrEmpty() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let empty = UUID()
+        try await fixture.delivery.begin(sessionID: empty, target: AvailableInputTarget())
+        await fixture.delivery.finish(sessionID: empty)
+        XCTAssertEqual(fixture.delivery.lastDeliveredInput?.allSegmentsPosted, false)
+
+        let held = UUID()
+        try await fixture.delivery.begin(sessionID: held, target: nil)
+        fixture.delivery.accept(sessionID: held, itemID: "item-1", text: "保留した文")
+        await fixture.delivery.finish(sessionID: held)
+        let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertEqual(input.text, "保留した文")
+        XCTAssertFalse(input.allSegmentsPosted)
+        XCTAssertNil(input.target)
+    }
+
     func testUnresolvedSessionsAreArchivedWithoutBlockingOrMixingNewInput() async throws {
         let fixture = try DeliveryFixture()
         defer { fixture.cleanUp() }
