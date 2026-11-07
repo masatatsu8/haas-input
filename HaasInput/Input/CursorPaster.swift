@@ -3,6 +3,17 @@ import Carbon
 import Foundation
 import os
 
+/// 前の文を消して貼り直した結果
+enum HaasReplaceOutcome: Equatable {
+    /// 何も消さずに止めた
+    case notStarted
+    /// 途中で止めた (消した文字数)。貼り付けはしていない
+    case deletionInterrupted(deleted: Int)
+    /// 消した後の貼り付けが完了したか確かめられない
+    case pasteUncertain
+    case completed
+}
+
 final class CursorPaster {
     private typealias ClipboardItemSnapshot = [(NSPasteboard.PasteboardType, Data)]
     private typealias ClipboardSnapshot = [ClipboardItemSnapshot]
@@ -45,6 +56,112 @@ final class CursorPaster {
             let session = await sessionTask.value
             return session.outcome
         }
+    }
+
+    /// 末尾の deleteCount 文字を Backspace で消してから text を貼る。既存の貼り付けと同じ列に並べる
+    /// - shouldContinue: Backspace の前ごと (deleted は消した数) と貼り付けの直前に呼ぶ。入力欄の中身の確認はここで行う
+    /// - pasteGuard: 貼り付け (⌘V の前・途中・後) だけで使う。貼ると中身が変わるため入力欄の中身は見ない
+    @MainActor
+    @discardableResult
+    static func startReplaceAtCursor(
+        _ text: String, deleteCount: Int,
+        shouldContinue: @escaping (_ deleted: Int) -> Bool,
+        pasteGuard: @escaping () -> Bool
+    ) -> Task<HaasReplaceOutcome, Never> {
+        let previousPasteTask = pasteQueueTask
+        let sessionTask = Task { @MainActor in
+            await previousPasteTask?.value
+            return await performReplaceSession(
+                text, deleteCount: deleteCount, shouldContinue: shouldContinue, pasteGuard: pasteGuard)
+        }
+        pasteQueueTask = Task { @MainActor in
+            let session = await sessionTask.value
+            await session.clipboardRestoreTask?.value
+        }
+        return Task { @MainActor in
+            await sessionTask.value.outcome
+        }
+    }
+
+    @MainActor
+    private static func performReplaceSession(
+        _ text: String, deleteCount: Int,
+        shouldContinue: @escaping (_ deleted: Int) -> Bool,
+        pasteGuard: @escaping () -> Bool
+    ) async -> (outcome: HaasReplaceOutcome, clipboardRestoreTask: Task<Void, Never>?) {
+        let sessionID = UUID().uuidString
+        let pasteboard = NSPasteboard.general
+        // 削除より前に、元のクリップボードを保存して貼る文を準備する
+        let savedContents = snapshotClipboard(from: pasteboard)
+        guard ClipboardManager.setClipboard(text, transient: true, sessionID: sessionID) else {
+            logger.error("Failed to prepare clipboard for replacement id=\(sessionID, privacy: .public)")
+            return (.notStarted, nil)
+        }
+        let preparedClipboardChangeCount = pasteboard.changeCount
+        let ownsClipboard: () -> Bool = {
+            pasteboardStillOwnedByPasteSession(
+                pasteboard, expectedText: text, sessionID: sessionID,
+                expectedChangeCount: preparedClipboardChangeCount)
+        }
+        await wait(prePasteDelay)
+
+        let pasteRejection: () -> PasteResult? = {
+            guard ownsClipboard() else { return .clipboardChanged }
+            return pasteGuard() ? nil : .commandNotPosted
+        }
+        let outcome = await runReplacement(
+            deleteCount: deleteCount,
+            // Backspace の前ごとに、クリップボードがこのセッションのままかも確かめる
+            shouldContinue: { deleted in ownsClipboard() && shouldContinue(deleted) },
+            postBackspace: { await postBackspace() },
+            paste: { await pasteFromClipboard(sessionID: sessionID, pasteRejection: pasteRejection) }
+        )
+        logger.notice("Replace id=\(sessionID, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
+        let restore = scheduleClipboardRestore(
+            savedContents, expectedText: text, sessionID: sessionID,
+            expectedChangeCount: preparedClipboardChangeCount, on: pasteboard
+        )
+        return (outcome, restore)
+    }
+
+    /// 消す手順の本体。Backspace の前ごと、貼り付けの直前に shouldContinue で止められる。貼り付けの後は確認しない
+    static func runReplacement(
+        deleteCount: Int,
+        shouldContinue: (_ deleted: Int) -> Bool,
+        postBackspace: () async -> Bool,
+        paste: () async -> PasteResult
+    ) async -> HaasReplaceOutcome {
+        var deleted = 0
+        while deleted < deleteCount {
+            guard shouldContinue(deleted) else {
+                return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted)
+            }
+            guard await postBackspace() else { return .deletionInterrupted(deleted: deleted) }
+            deleted += 1
+        }
+        guard shouldContinue(deleted) else {
+            return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted)
+        }
+        return await paste() == .commandPosted ? .completed : .pasteUncertain
+    }
+
+    /// Backspace (keyCode 0x33) を1回送る。印を付けて、利用者の操作と区別できるようにする
+    @MainActor
+    private static func postBackspace() async -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        let source = CGEventSource(stateID: .privateState)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0x33, keyDown: true),
+            let up = CGEvent(keyboardEventSource: source, virtualKey: 0x33, keyDown: false)
+        else { return false }
+        for event in [down, up] {
+            event.flags = []
+            event.setIntegerValueField(.eventSourceUserData, value: HaasSyntheticInput.marker)
+        }
+        down.post(tap: .cghidEventTap)
+        await wait(pasteShortcutEventDelay)
+        up.post(tap: .cghidEventTap)
+        await wait(pasteShortcutEventDelay)
+        return true
     }
 
     @MainActor

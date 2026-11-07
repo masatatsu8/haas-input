@@ -61,6 +61,24 @@ struct HaasPasteTarget: HaasInputTargetChecking {
         return CFEqual(element, current.element) ? nil : "focus_changed"
     }
 
+    func fieldState() -> HaasFieldState {
+        AXUIElementSetMessagingTimeout(element, 0.10)
+        var value: CFTypeRef?
+        var range: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success,
+            let text = value as? String,
+            AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range) == .success,
+            let range, CFGetTypeID(range) == AXValueGetTypeID()
+        else { return .unreadable }
+        var selected = CFRange()
+        guard AXValueGetValue(range as! AXValue, .cfRange, &selected) else { return .unreadable }
+        return HaasFieldState.make(value: text, selectedRange: selected)
+    }
+
+    func activate() -> Bool {
+        NSRunningApplication(processIdentifier: processID)?.activate() ?? false
+    }
+
     private static func readTarget(
         diagnoseFailure: Bool, expectedPID: pid_t? = nil
     ) -> (target: HaasPasteTarget?, reason: String?) {
@@ -155,6 +173,19 @@ struct HaasPasteTarget: HaasInputTargetChecking {
 
     private static func isOptionalAttributeResult(_ error: AXError) -> Bool {
         error == .success || error == .attributeUnsupported || error == .noValue || error == .notImplemented
+    }
+}
+
+extension HaasFieldState {
+    /// AX の値と選択範囲 (UTF-16 の位置) から作る。範囲が値の外や文字の途中なら .unreadable
+    static func make(value: String, selectedRange: CFRange) -> HaasFieldState {
+        let units = value.utf16.count
+        guard selectedRange.location >= 0, selectedRange.length >= 0,
+            selectedRange.location <= units, selectedRange.length <= units - selectedRange.location
+        else { return .unreadable }
+        let caret = String.Index(utf16Offset: selectedRange.location, in: value)
+        guard caret.samePosition(in: value.unicodeScalars) != nil else { return .unreadable }
+        return .readable(textBeforeCaret: String(value[..<caret]), selectionLength: selectedRange.length)
     }
 }
 
