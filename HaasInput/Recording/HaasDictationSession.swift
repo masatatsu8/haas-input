@@ -72,6 +72,7 @@ final class HaasDictationSession {
     private var isCancelled = false
     private var isFinished = false
     private var transcript: HaasSessionTranscript
+    private let protectedTerms: [String]
     private var latestRawPreview = ""
     private var pendingFormatting: PendingFormatting?
     private var formattingWaiters: [CheckedContinuation<Void, Never>] = []
@@ -82,7 +83,8 @@ final class HaasDictationSession {
     init(
         runtime: HaasRuntimeConfiguration, words: String,
         inputTarget: HaasPasteTarget?, onPartialTranscript: ((String) -> Void)?,
-        replacementPlan: WordReplacementPlan, punctuationMode: HaasPunctuationMode = .fast,
+        replacementPlan: WordReplacementPlan, vocabularyEntries: [HaasVocabularyEntry] = [],
+        punctuationMode: HaasPunctuationMode = .fast,
         punctuationWorker: HaasPunctuationWorker? = nil, delivery: HaasInputDelivery? = nil,
         onFailure: ((Error) -> Void)? = nil
     ) {
@@ -92,15 +94,18 @@ final class HaasDictationSession {
         self.onPartialTranscript = onPartialTranscript
         self.onFailure = onFailure
         self.punctuationMode = punctuationMode
-        self.punctuationWorker = punctuationWorker ?? .shared
+        self.punctuationWorker = punctuationWorker ?? .forMode(punctuationMode)
         self.delivery = delivery ?? .shared
-        transcript = HaasSessionTranscript(replacements: replacementPlan)
+        let vocabulary = HaasVocabularyMatcher(entries: vocabularyEntries)
+        var seenTerms: Set<String> = []
+        protectedTerms = (vocabulary.writtenForms + replacementPlan.replacementTexts).filter { seenTerms.insert($0).inserted }
+        transcript = HaasSessionTranscript(replacements: replacementPlan, vocabulary: vocabulary)
     }
 
     func prepare() async throws -> ((Data) -> Void)? {
         try await delivery.begin(sessionID: sessionID, target: inputTarget)
         try checkCancellation()
-        if punctuationMode == .natural { punctuationWorker.prewarm() }
+        if punctuationMode.usesOnDeviceModel { punctuationWorker.prewarm() }
         let client = HaasRealtimeClient(configuration: runtime) { [weak self] event in
             self?.receive(event)
         }
@@ -203,7 +208,8 @@ final class HaasDictationSession {
                     return
                 }
                 pendingFormatting = PendingFormatting(requestID: requestID, itemID: id, text: base)
-                if !punctuationWorker.submit(base, requestID: requestID, receivedAt: receivedAt, completion: { [weak self] candidate in
+                if !punctuationWorker.submit(base, requestID: requestID, receivedAt: receivedAt,
+                    protectedTerms: protectedTerms.filter(base.contains), completion: { [weak self] candidate in
                     self?.completeFormatting(requestID: requestID, candidate: candidate)
                 }) {
                     completeFormatting(requestID: requestID, candidate: nil)

@@ -49,28 +49,77 @@ final class HaasTransportTests: XCTestCase {
         }
     }
 
-    func testStatefulResamplingPreservesDurationAndPitchAcrossUnevenChunks() throws {
-        let converter = try HaasPCMConverter()
-        let samples = (0..<16_000).map { index in
-            Int16((sin(2 * Double.pi * 1_000 * Double(index) / 16_000) * 16_000).rounded())
-        }
-        let input = samples.withUnsafeBytes { Data($0) }
-        let frameSizes = [1, 19, 997, 384, 1_537]
-        var offset = 0
-        var chunk = 0
-        var output = Data()
-        while offset < input.count {
-            let end = min(offset + frameSizes[chunk % frameSizes.count] * 2, input.count)
-            output.append(try converter.convert(input.subdata(in: offset..<end)))
-            offset = end
-            chunk += 1
-        }
-        output.append(try converter.finish())
-        XCTAssertEqual(output.count, 24_000 * 2)
-        let converted: [Int16] = output.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }
+    func testResamplesStereo48kHzToMono24kHzAcrossUnevenChunks() throws {
+        let rate = 48_000.0
+        let mono = sine(frequency: 1_000, amplitude: 0.5, sampleRate: rate, frames: 48_000)
+        let stereo = mono.flatMap { [$0, $0] }
+        let converted = try resample(stereo, sampleRate: rate, channelCount: 2)
+        XCTAssertEqual(converted.count, 24_000)
         let crossings = (2_401..<21_600).filter { converted[$0 - 1] <= 0 && converted[$0] > 0 }.count
         XCTAssertEqual(Double(crossings), 800, accuracy: 2)
+        XCTAssertEqual(rms(converted[2_400..<21_600]), 0.5 / 2.squareRoot() * 32_767, accuracy: 300)
+    }
+
+    func testResamples44_1kHzWithoutDroppingFramesAtBufferBoundaries() throws {
+        let rate = 44_100.0
+        let input = sine(frequency: 1_000, amplitude: 0.5, sampleRate: rate, frames: 44_100)
+        let converted = try resample(input, sampleRate: rate, channelCount: 1)
+        XCTAssertEqual(converted.count, 24_000)
+        let crossings = (2_401..<21_600).filter { converted[$0 - 1] <= 0 && converted[$0] > 0 }.count
+        XCTAssertEqual(Double(crossings), 800, accuracy: 2)
+    }
+
+    func testFiltersFrequenciesAbove12kHzBeforeDownsampling() throws {
+        let rate = 48_000.0
+        let input = sine(frequency: 18_000, amplitude: 0.5, sampleRate: rate, frames: 48_000)
+        let converted = try resample(input, sampleRate: rate, channelCount: 1)
+        // Without a low-pass filter, 18 kHz folds back to 6 kHz at nearly full level (about 11,585).
+        XCTAssertLessThan(rms(converted[2_400..<21_600]), 100)
+    }
+
+    func testClipsOutOfRangeSamplesInsteadOfWrappingAround() throws {
+        let converted = try resample(Array(repeating: 1.5, count: 4_800), sampleRate: 48_000, channelCount: 1)
+        XCTAssertTrue(converted[600..<1_800].allSatisfy { $0 == Int16.max })
+    }
+
+    func testConverterRejectsInputAfterFinish() throws {
+        let converter = try HaasPCMConverter(inputSampleRate: 48_000)
+        _ = try converter.finish()
         XCTAssertTrue(try converter.finish().isEmpty)
+        let samples: [Float32] = [0, 0]
+        XCTAssertThrowsError(try samples.withUnsafeBufferPointer { buffer in
+            try converter.convert(interleaved: buffer.baseAddress!, frameCount: 2, channelCount: 1)
+        })
+    }
+
+    private func sine(frequency: Double, amplitude: Double, sampleRate: Double, frames: Int) -> [Float32] {
+        (0..<frames).map { Float32(sin(2 * Double.pi * frequency * Double($0) / sampleRate) * amplitude) }
+    }
+
+    /// Feeds uneven chunks, including one larger than the converter's buffer, then flushes the tail.
+    private func resample(_ samples: [Float32], sampleRate: Double, channelCount: Int) throws -> [Int16] {
+        let converter = try HaasPCMConverter(inputSampleRate: sampleRate, maximumInputFrames: 4_096)
+        let frameSizes = [1, 19, 997, 384, 5_000, 512, 471]
+        let totalFrames = samples.count / channelCount
+        var output = Data()
+        var offset = 0
+        var chunk = 0
+        try samples.withUnsafeBufferPointer { buffer in
+            while offset < totalFrames {
+                let frames = min(frameSizes[chunk % frameSizes.count], totalFrames - offset)
+                output.append(try converter.convert(
+                    interleaved: buffer.baseAddress! + offset * channelCount,
+                    frameCount: frames, channelCount: channelCount))
+                offset += frames
+                chunk += 1
+            }
+        }
+        output.append(try converter.finish())
+        return output.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }
+    }
+
+    private func rms(_ samples: ArraySlice<Int16>) -> Double {
+        (samples.reduce(0) { $0 + Double($1) * Double($1) } / Double(samples.count)).squareRoot()
     }
 
     private func event(

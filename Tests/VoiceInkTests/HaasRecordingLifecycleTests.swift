@@ -170,6 +170,11 @@ final class HaasRecordingLifecycleTests: XCTestCase {
         _ = try await beginRecording(fixture)
         XCTAssertEqual(fixture.sessions.last?.options.punctuationMode, .natural)
         await fixture.engine.cancelRecording()
+
+        UserDefaults.standard.set("proofread", forKey: HaasPunctuationMode.settingsKey)
+        _ = try await beginRecording(fixture)
+        XCTAssertEqual(fixture.sessions.last?.options.punctuationMode, .proofread)
+        await fixture.engine.cancelRecording()
     }
 
     func testTerminationRefusesToDiscardUnsavedRecovery() async throws {
@@ -510,12 +515,13 @@ private final class ControlledAudioRecorder: HaasAudioRecording {
     func startRecording(toOutputFile url: URL) async throws {
         startCount += 1
         pendingStartCancelled = false
-        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let format = try XCTUnwrap(
+            AVAudioFormat(standardFormatWithSampleRate: HaasPCMConverter.outputSampleRate, channels: 1))
         let file = try AVAudioFile(forWriting: url, settings: format.settings)
-        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1_600))
-        buffer.frameLength = 1_600
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 2_400))
+        buffer.frameLength = 2_400
         let samples = try XCTUnwrap(buffer.floatChannelData?[0])
-        for index in 0..<1_600 { samples[index] = 0 }
+        for index in 0..<2_400 { samples[index] = 0 }
         try file.write(from: buffer)
         onStart?()
         await startGate?.wait()

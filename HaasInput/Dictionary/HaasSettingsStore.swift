@@ -50,6 +50,11 @@ final class HaasSettingsStore: ObservableObject {
         return entries.map(\.wordsLine).joined(separator: "\n")
     }
 
+    func vocabularyEntriesSnapshot() throws -> [HaasVocabularyEntry] {
+        guard loadError == nil else { throw HaasVocabularyError.unreadableDictionary }
+        return entries
+    }
+
     func saveEntry(
         id: UUID? = nil,
         writtenForm: String,

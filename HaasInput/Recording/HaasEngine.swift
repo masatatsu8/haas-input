@@ -474,7 +474,8 @@ final class HaasEngine: ObservableObject {
         return HaasDictationSession(
             runtime: try settings.runtimeConfiguration(), words: try settings.vocabularySnapshot(),
             inputTarget: options.inputTarget, onPartialTranscript: options.onPartialTranscript,
-            replacementPlan: options.replacementPlan, punctuationMode: options.punctuationMode,
+            replacementPlan: options.replacementPlan,
+            vocabularyEntries: try settings.vocabularyEntriesSnapshot(), punctuationMode: options.punctuationMode,
             delivery: options.delivery, onFailure: options.onFailure
         )
     }

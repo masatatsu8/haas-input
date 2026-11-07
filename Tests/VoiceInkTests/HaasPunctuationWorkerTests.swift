@@ -183,6 +183,47 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         XCTAssertEqual(results, [nil])
     }
 
+    func testProofreadingValidatorAcceptsCorrectionsAndPassesProtectedTerms() async throws {
+        let generator = ControlledPunctuationGenerator()
+        defer { generator.cancelPending() }
+        var seenTerms: [String] = []
+        let worker = HaasPunctuationWorker(generator: generator, timeout: .seconds(2)) { candidate, original, terms in
+            seenTerms = terms
+            return HaasProofreadValidator.validatedCandidate(candidate, preserving: original, protectedTerms: terms)
+        }
+        let started = expectation(description: "started")
+        let done = expectation(description: "done")
+        generator.onStarted = { _ in started.fulfill() }
+        var result: String??
+        XCTAssertTrue(worker.submit("巽さんの端末ないで", requestID: UUID(), protectedTerms: ["巽"]) {
+            result = $0
+            done.fulfill()
+        })
+        await fulfillment(of: [started], timeout: 1)
+        try generator.complete(index: 0, result: .success("巽さんの端末内で"))
+        await fulfillment(of: [done], timeout: 1)
+        XCTAssertEqual(result, .some("巽さんの端末内で"))
+        XCTAssertEqual(seenTerms, ["巽"])
+    }
+
+    func testDefaultValidatorStillRejectsWordChangesForPunctuationOnlyMode() async throws {
+        let generator = ControlledPunctuationGenerator()
+        defer { generator.cancelPending() }
+        let worker = HaasPunctuationWorker(generator: generator, timeout: .seconds(2))
+        let started = expectation(description: "started")
+        let done = expectation(description: "done")
+        generator.onStarted = { _ in started.fulfill() }
+        var result: String??
+        XCTAssertTrue(worker.submit("端末ないで", requestID: UUID()) {
+            result = $0
+            done.fulfill()
+        })
+        await fulfillment(of: [started], timeout: 1)
+        try generator.complete(index: 0, result: .success("端末内で"))
+        await fulfillment(of: [done], timeout: 1)
+        XCTAssertEqual(result, .some(nil))
+    }
+
     private func occupyCurrentActor(for interval: TimeInterval) {
         Thread.sleep(forTimeInterval: interval)
     }

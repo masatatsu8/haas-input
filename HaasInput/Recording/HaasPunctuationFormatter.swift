@@ -2,10 +2,10 @@ import Foundation
 
 enum HaasPunctuationFormatter {
     private static let sentenceEndings = ["です", "ます", "でした", "ました", "ません", "ください"]
-    private static let unfinishedEndings = ["ので", "ですが", "あとで", "けれども", "けれど", "けど", "のに", "ながら"]
+    static let unfinishedEndings = ["ので", "ですが", "あとで", "けれども", "けれど", "けど", "のに", "ながら"]
     private static let punctuation = Set("、。，．,.!?！？".unicodeScalars)
     private static let openingMarks = Set("「『（([{【〈《“‘\"'".unicodeScalars)
-    private static let closingMarks = Set("」』）)]}】〉》”’\"'".unicodeScalars)
+    static let closingMarks = Set("」』）)]}】〉》”’\"'".unicodeScalars)
 
     static func fast(_ text: String) -> String {
         let scalars = Array(text.unicodeScalars)

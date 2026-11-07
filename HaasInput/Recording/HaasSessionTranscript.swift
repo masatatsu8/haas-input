@@ -2,20 +2,25 @@ import Foundation
 
 struct HaasSessionTranscript {
     private let replacements: WordReplacementPlan
+    private let vocabulary: HaasVocabularyMatcher
     private var ledger = HaasSegmentLedger()
     private var committedIDs = Set<String>()
     private var finalizedIDs = Set<String>()
     private var rawCommittedText = ""
 
-    init(replacements: WordReplacementPlan) {
+    init(replacements: WordReplacementPlan, vocabulary: HaasVocabularyMatcher = .empty) {
         self.replacements = replacements
+        self.vocabulary = vocabulary
     }
 
     var text: String { ledger.fullText }
 
     mutating func commit(id: String, rawText: String) -> String? {
         guard committedIDs.insert(id).inserted else { return nil }
-        let formatted = replacements.apply(to: rawText)
+        let formatted = vocabulary.apply(
+            to: replacements.apply(to: rawText),
+            protecting: replacements.replacementTexts
+        )
         rawCommittedText += rawText
         ledger.append(id: id, text: formatted)
         return formatted
