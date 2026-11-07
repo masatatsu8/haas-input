@@ -7,6 +7,27 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
     private let copiedMessage = "直した文をコピーしました。⌘V で貼れます"
     private let interruptedMessage = "入れ直しを途中で止めました。⌘V で直した文を貼れます"
 
+    func testHotkeyDoesNothingWhileBusyButTellsWhenNothingToCorrect() throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        var notices: [String] = []
+        let controller = HaasCorrectionPanelController(coordinator: fixture.coordinator) { message, _ in
+            notices.append(message)
+        }
+        // 録音中・認識中は、直す文がなくても知らせない
+        fixture.idle = false
+        XCTAssertTrue(fixture.coordinator.isBusy)
+        controller.show()
+        XCTAssertEqual(notices, [])
+        XCTAssertEqual(fixture.returnTarget.activateCount, 0)
+
+        // 待機中に直す文がなければ知らせる。録音中に押した後も、次のホットキーは効く
+        fixture.idle = true
+        XCTAssertFalse(fixture.coordinator.isBusy)
+        controller.show()
+        XCTAssertEqual(notices, ["直す入力がありません"])
+    }
+
     func testBeginReturnsNilWhileBusy() throws {
         let fixture = try CorrectionFixture()
         defer { fixture.cleanUp() }

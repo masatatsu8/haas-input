@@ -84,6 +84,20 @@ final class HaasCorrectionPanelModelTests: XCTestCase {
         XCTAssertNil(plain.notice)
     }
 
+    func testSuggestionTitleShowsBeforeTextForReplacementRules() {
+        // 置き換えのルールは今後の認識すべてに効くので、何を何に変えるかを出す
+        XCTAssertEqual(HaasCorrectionPanelModel.title(for: suggestion(0, before: "火", written: "日")), "『火』→『日』")
+        XCTAssertEqual(
+            HaasCorrectionPanelModel.title(
+                for: HaasDictionarySuggestion(id: 1, kind: .newWord, before: "たつみ", writtenForm: "巽", reading: "たつみ")),
+            "巽")
+        XCTAssertEqual(
+            HaasCorrectionPanelModel.title(
+                for: HaasDictionarySuggestion(
+                    id: 2, kind: .addReading(entryID: UUID()), before: "たつみ", writtenForm: "巽", reading: "たつみ")),
+            "巽")
+    }
+
     func testSessionGateIgnoresSecondOpenAndSerializesClose() {
         var gate = HaasCorrectionSessionGate()
         XCTAssertTrue(gate.tryOpen())

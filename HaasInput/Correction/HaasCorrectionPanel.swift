@@ -64,6 +64,14 @@ final class HaasCorrectionPanelModel: ObservableObject {
         !corrected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// 候補の行に出す文。置き換えのルールは今後の認識すべてに効くので、何を何に変えるかを見せる
+    static func title(for suggestion: HaasDictionarySuggestion) -> String {
+        switch suggestion.kind {
+        case .replacement: return "『\(suggestion.before)』→『\(suggestion.writtenForm)』"
+        case .newWord, .addReading: return suggestion.writtenForm
+        }
+    }
+
     /// 選ばれている候補だけ。登録はこれだけにする
     var selectedSuggestions: [HaasDictionarySuggestion] {
         suggestions.filter { selectedIDs.contains($0.id) }
@@ -195,7 +203,7 @@ private struct HaasCorrectionPanelView: View {
                     })
             )
             .labelsHidden()
-            Text(suggestion.writtenForm).lineLimit(1)
+            Text(HaasCorrectionPanelModel.title(for: suggestion)).lineLimit(1)
             if suggestion.kind != .replacement {
                 TextField(
                     "読み",
@@ -269,6 +277,11 @@ final class HaasCorrectionPanelController: NSObject, NSWindowDelegate {
             }
             return
         }
+        // 録音中・認識中は何もしない (知らせもしない)
+        guard !coordinator.isBusy else {
+            gate.finish()
+            return
+        }
         // 入力先と判定を記録するため、自分の窓を出す前に begin を呼ぶ
         guard let draft = coordinator.begin() else {
             gate.finish()
@@ -304,7 +317,8 @@ final class HaasCorrectionPanelController: NSObject, NSWindowDelegate {
     }
 
     private func confirm() {
-        guard gate.beginClose(), let model else { return }
+        // model がないのに閉じ始めると gate が closing のまま残り、ホットキーが二度と効かなくなる
+        guard let model, gate.beginClose() else { return }
         let draft = model.draft
         let corrected = model.corrected
         let register = model.selectedSuggestions

@@ -105,6 +105,9 @@ final class HaasCorrectionCoordinator: ObservableObject {
         }
     }
 
+    /// 録音中・認識中。このときはホットキーで何もしない
+    var isBusy: Bool { !isIdle() }
+
     /// ポップアップを出す前 (自分の窓が key になる前) に呼ぶ。録音中・認識中や、直す文がなければ nil
     func begin() -> HaasCorrectionDraft? {
         // 開けなかったときに、前の状態を確定できないようにする

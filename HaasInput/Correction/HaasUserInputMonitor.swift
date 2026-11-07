@@ -131,11 +131,11 @@ final class HaasUserInputMonitor: HaasInputWatching {
         excludedShortcuts = excludedShortcutsProvider()
         if globalMonitor == nil {
             globalMonitor = makeGlobalMonitor { [weak self] event in
-                guard let observed = Self.observedInput(from: event) else { return }
-                let isOwn = event.cgEvent?.getIntegerValueField(.eventSourceUserData) == HaasSyntheticInput.marker
                 // 全体監視はメインスレッドで呼ばれる。記録を遅らせると、操作の後に clean と答えうるので同期で記録する
                 MainActor.assumeIsolated {
-                    guard let self else { return }
+                    // すでに clean でなければ、それ以上数えることはない
+                    guard let self, self.watch.isClean, let observed = Self.observedInput(from: event) else { return }
+                    let isOwn = event.cgEvent?.getIntegerValueField(.eventSourceUserData) == HaasSyntheticInput.marker
                     self.watch.record(observed, isOwnEvent: isOwn, shortcuts: self.excludedShortcuts)
                 }
             }
