@@ -40,12 +40,11 @@ final class CoreAudioRecorder: @unchecked Sendable {
     private var deviceFormat = AudioStreamBasicDescription()
     private var captureChannelCount: UInt32 = 1
     private var captureChannelSelection = AudioInputChannelSelection(deviceChannelIndices: [])
-    // Output format (16kHz mono PCM Int16 for transcription)
+    // Output format (24 kHz mono PCM Int16, the rate speech.cpp's Realtime API accepts)
     private var outputFormat = AudioStreamBasicDescription()
 
-    // Conversion buffer, used only on audioProcessingQueue.
-    private var conversionBuffer: UnsafeMutablePointer<Int16>?
-    private var conversionBufferSize: UInt32 = 0
+    // Stateful resampler for the current recording, used only on audioProcessingQueue.
+    private var pcmConverter: HaasPCMConverter?
 
     // Audio metering. Store bit patterns so the render callback never locks.
     private let averagePowerBits = ManagedAtomic<UInt32>(Float32(-160.0).bitPattern)
@@ -79,7 +78,7 @@ final class CoreAudioRecorder: @unchecked Sendable {
     private let droppedInputBuffersBackpressure = ManagedAtomic<UInt64>(0)
     private let droppedInputBuffersCapacity = ManagedAtomic<UInt64>(0)
 
-    /// Called from the recorder processing queue with raw PCM data (16-bit, 16kHz, mono) for streaming.
+    /// Called from the recorder processing queue with raw PCM data (16-bit, 24 kHz, mono) for streaming.
     private let audioChunkLock = NSLock()
     private var _onAudioChunk: ((_ data: Data) -> Void)?
     var onAudioChunk: ((_ data: Data) -> Void)? {
@@ -221,6 +220,7 @@ final class CoreAudioRecorder: @unchecked Sendable {
         }
 
         drainAudioProcessingQueue()
+        performOnAudioProcessingQueue { flushConverter() }
         logDroppedInputBufferCounters(context: "stop")
 
         let shouldInvalidatePreparation = capturedTooLittleAudio()
@@ -353,7 +353,6 @@ final class CoreAudioRecorder: @unchecked Sendable {
         allocateAudioBuffers(
             maxFrames: renderFrameCapacity(for: newDeviceID),
             channelCount: newCaptureChannelCount,
-            inputSampleRate: newDeviceFormat.mSampleRate,
             resetQueuedAudio: true
         )
 
@@ -474,9 +473,9 @@ final class CoreAudioRecorder: @unchecked Sendable {
             throw CoreAudioRecorderError.failedToGetDeviceFormat(status: status)
         }
 
-        // Configure output format: 16kHz, mono, PCM Int16
+        // Configure output format: 24 kHz, mono, PCM Int16
         outputFormat = AudioStreamBasicDescription(
-            mSampleRate: 16000.0,
+            mSampleRate: HaasPCMConverter.outputSampleRate,
             mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
             mBytesPerPacket: 2,
@@ -516,7 +515,6 @@ final class CoreAudioRecorder: @unchecked Sendable {
         allocateAudioBuffers(
             maxFrames: renderFrameCapacity(for: currentDeviceID),
             channelCount: captureChannelCount,
-            inputSampleRate: deviceFormat.mSampleRate,
             resetQueuedAudio: true
         )
     }
@@ -590,7 +588,6 @@ final class CoreAudioRecorder: @unchecked Sendable {
     private func allocateAudioBuffers(
         maxFrames: UInt32,
         channelCount: UInt32,
-        inputSampleRate: Double,
         resetQueuedAudio: Bool
     ) {
         let bufferSamples = maxFrames * channelCount
@@ -607,13 +604,6 @@ final class CoreAudioRecorder: @unchecked Sendable {
                 InputBufferSlot(capacitySamples: bufferSamples)
             }
             inputBufferCapacitySamples = bufferSamples
-        }
-
-        let maxOutputFrames = UInt32(ceil(Double(maxFrames) * (outputFormat.mSampleRate / inputSampleRate))) + 1
-        if maxOutputFrames > conversionBufferSize {
-            conversionBuffer?.deallocate()
-            conversionBuffer = UnsafeMutablePointer<Int16>.allocate(capacity: Int(maxOutputFrames))
-            conversionBufferSize = maxOutputFrames
         }
 
         if resetQueuedAudio {
@@ -792,12 +782,7 @@ final class CoreAudioRecorder: @unchecked Sendable {
 
     private func freeBuffers() {
         drainAudioProcessingQueue()
-
-        if let buffer = conversionBuffer {
-            buffer.deallocate()
-            conversionBuffer = nil
-            conversionBufferSize = 0
-        }
+        performOnAudioProcessingQueue { pcmConverter = nil }
 
         if let buffer = renderBuffer {
             buffer.deallocate()
@@ -1017,12 +1002,14 @@ final class CoreAudioRecorder: @unchecked Sendable {
     }
 
     private func drainAudioProcessingQueue() {
+        performOnAudioProcessingQueue { processQueuedInputBuffers() }
+    }
+
+    private func performOnAudioProcessingQueue(_ work: () -> Void) {
         if DispatchQueue.getSpecific(key: audioProcessingQueueKey) != nil {
-            processQueuedInputBuffers()
+            work()
         } else {
-            audioProcessingQueue.sync {
-                processQueuedInputBuffers()
-            }
+            audioProcessingQueue.sync(execute: work)
         }
     }
 
@@ -1055,92 +1042,77 @@ final class CoreAudioRecorder: @unchecked Sendable {
         inputChannels: UInt32,
         inputSampleRate: Double
     ) {
-        guard recordingFailure == nil, let file = audioFile else { return }
+        guard recordingFailure == nil, audioFile != nil else { return }
 
-        let outputSampleRate = outputFormat.mSampleRate
-
-        // Calculate output frame count after sample rate conversion
-        let ratio = outputSampleRate / inputSampleRate
-        let outputFrameCount = UInt32(Double(frameCount) * ratio)
-
-        guard outputFrameCount > 0,
-            let outputBuffer = conversionBuffer,
-            outputFrameCount <= conversionBufferSize
-        else { return }
-
-        // Convert Float32 multi-channel → Int16 mono (with sample rate conversion if needed)
-        if inputSampleRate == outputSampleRate {
-            // Direct conversion, just format change and channel mixing
-            for i in 0..<Int(frameCount) {
-                var sample: Float32 = 0
-                // Mix all channels to mono
-                for ch in 0..<Int(inputChannels) {
-                    sample += inputSamples[i * Int(inputChannels) + ch]
-                }
-                sample /= Float32(inputChannels)
-
-                // Convert to Int16 with clipping
-                let scaled = sample * 32767.0
-                let clipped = max(-32768.0, min(32767.0, scaled))
-                outputBuffer[i] = Int16(clipped)
+        do {
+            // A device switch can change the input rate. Emit the old converter's tail before replacing it.
+            if pcmConverter?.inputSampleRate != inputSampleRate {
+                flushConverter()
+                guard recordingFailure == nil else { return }
+                pcmConverter = try HaasPCMConverter(
+                    inputSampleRate: inputSampleRate, maximumInputFrames: maxFramesPerRender)
             }
-        } else {
-            // Sample rate conversion needed - use linear interpolation
-            for i in 0..<Int(outputFrameCount) {
-                let inputIndex = Double(i) / ratio
-                let inputIndexInt = Int(inputIndex)
-                let frac = Float32(inputIndex - Double(inputIndexInt))
-
-                var sample: Float32 = 0
-                let idx1 = min(inputIndexInt, Int(frameCount) - 1)
-                let idx2 = min(inputIndexInt + 1, Int(frameCount) - 1)
-
-                // Mix channels and interpolate
-                for ch in 0..<Int(inputChannels) {
-                    let s1 = inputSamples[idx1 * Int(inputChannels) + ch]
-                    let s2 = inputSamples[idx2 * Int(inputChannels) + ch]
-                    sample += s1 + frac * (s2 - s1)
-                }
-                sample /= Float32(inputChannels)
-
-                // Convert to Int16
-                let scaled = sample * 32767.0
-                let clipped = max(-32768.0, min(32767.0, scaled))
-                outputBuffer[i] = Int16(clipped)
-            }
-        }
-
-        // Write to file
-        var outputBufferList = AudioBufferList(
-            mNumberBuffers: 1,
-            mBuffers: AudioBuffer(
-                mNumberChannels: 1,
-                mDataByteSize: outputFrameCount * 2,
-                mData: outputBuffer
+            guard let converter = pcmConverter else { return }
+            let pcm = try converter.convert(
+                interleaved: inputSamples, frameCount: Int(frameCount), channelCount: Int(inputChannels))
+            writeConvertedAudio(pcm)
+        } catch {
+            pcmConverter = nil
+            logger.error(
+                "Audio conversion from \(inputSampleRate, privacy: .public) Hz failed: \(String(reflecting: error), privacy: .public)"
             )
-        )
+            reportRecordingFailure(.failedToConvertAudio)
+        }
+    }
 
-        let writeStatus = ExtAudioFileWrite(file, outputFrameCount, &outputBufferList)
+    /// Writes the converter's buffered tail. Call on audioProcessingQueue after queued input is drained.
+    private func flushConverter() {
+        guard let converter = pcmConverter else { return }
+        pcmConverter = nil
+        guard recordingFailure == nil, audioFile != nil else { return }
+        do {
+            writeConvertedAudio(try converter.finish())
+        } catch {
+            logger.error(
+                "Flushing audio converted from \(converter.inputSampleRate, privacy: .public) Hz failed: \(String(reflecting: error), privacy: .public)"
+            )
+            reportRecordingFailure(.failedToConvertAudio)
+        }
+    }
+
+    private func writeConvertedAudio(_ pcm: Data) {
+        guard !pcm.isEmpty, let file = audioFile else { return }
+        let frameCount = UInt32(pcm.count / MemoryLayout<Int16>.size)
+        let writeStatus = pcm.withUnsafeBytes { bytes -> OSStatus in
+            var bufferList = AudioBufferList(
+                mNumberBuffers: 1,
+                mBuffers: AudioBuffer(
+                    mNumberChannels: 1,
+                    mDataByteSize: UInt32(pcm.count),
+                    mData: UnsafeMutableRawPointer(mutating: bytes.baseAddress)
+                )
+            )
+            return ExtAudioFileWrite(file, frameCount, &bufferList)
+        }
         if writeStatus != noErr {
-            recordingActive.store(false, ordering: .releasing)
-            let error = CoreAudioRecorderError.failedToWriteFile(status: writeStatus)
-            let notification = recordingFailureLock.withLock { () -> (Bool, ((Error) -> Void)?) in
-                guard firstRecordingFailure == nil else { return (false, nil) }
-                firstRecordingFailure = error
-                return (true, recordingFailureHandler)
-            }
-            if notification.0 {
-                logger.error("ExtAudioFileWrite failed with status: \(writeStatus, privacy: .public)")
-                notification.1?(error)
-            }
+            logger.error("ExtAudioFileWrite failed with status: \(writeStatus, privacy: .public)")
+            reportRecordingFailure(.failedToWriteFile(status: writeStatus))
             return
         }
 
         // Send the same PCM data to the streaming callback if set.
-        if let audioChunk = onAudioChunk {
-            let byteCount = Int(outputFrameCount) * MemoryLayout<Int16>.size
-            let data = Data(bytes: outputBuffer, count: byteCount)
-            audioChunk(data)
+        onAudioChunk?(pcm)
+    }
+
+    private func reportRecordingFailure(_ error: CoreAudioRecorderError) {
+        recordingActive.store(false, ordering: .releasing)
+        let notification = recordingFailureLock.withLock { () -> (Bool, ((Error) -> Void)?) in
+            guard firstRecordingFailure == nil else { return (false, nil) }
+            firstRecordingFailure = error
+            return (true, recordingFailureHandler)
+        }
+        if notification.0 {
+            notification.1?(error)
         }
     }
 
@@ -1344,13 +1316,14 @@ enum CoreAudioRecorderError: LocalizedError {
     case failedToSetCallback(status: OSStatus)
     case failedToCreateFile(status: OSStatus)
     case failedToWriteFile(status: OSStatus)
+    case failedToConvertAudio
     case failedToSetFileFormat(status: OSStatus)
     case failedToInitialize(status: OSStatus)
     case failedToStart(status: OSStatus)
 
     var status: OSStatus? {
         switch self {
-        case .audioUnitNotFound, .audioUnitNotInitialized, .deviceNotAvailable:
+        case .audioUnitNotFound, .audioUnitNotInitialized, .deviceNotAvailable, .failedToConvertAudio:
             return nil
         case .failedToCreateAudioUnit(let status), .failedToEnableInput(let status),
             .failedToDisableOutput(let status), .failedToSetDevice(let status),
@@ -1388,6 +1361,8 @@ enum CoreAudioRecorderError: LocalizedError {
             return "録音ファイルを作成できませんでした。保存先と空き容量を確認してください。"
         case .failedToWriteFile:
             return "録音の保存に失敗しました。音声は途中までの可能性があります。認識した文章と保存済みの音声は履歴で確認できます。"
+        case .failedToConvertAudio:
+            return "録音した音声を変換できませんでした。音声は途中までの可能性があります。認識した文章と保存済みの音声は履歴で確認できます。"
         case .failedToSetFileFormat:
             return "録音ファイルの形式を設定できませんでした。"
         case .failedToInitialize:
