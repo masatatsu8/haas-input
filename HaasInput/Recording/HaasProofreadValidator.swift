@@ -10,7 +10,9 @@ enum HaasProofreadValidator {
         if !original.contains(where: \.isNewline), candidate.contains(where: \.isNewline) { return nil }
 
         let normalizedOriginal = normalized(original)
-        let normalizedCandidate = normalized(candidate)
+        guard let normalizedCandidate = normalizedOriginal.contains("?")
+            ? normalized(candidate) : removingAddedQuestionMarks(normalized(candidate))
+        else { return nil }
         let strippedOriginal = Array(stripPunctuation(normalizedOriginal))
         let strippedCandidate = Array(stripPunctuation(normalizedCandidate))
         let allowance = max(minimumEditAllowance, Int(Double(strippedOriginal.count) * maximumEditRatio))
@@ -26,12 +28,23 @@ enum HaasProofreadValidator {
         return result
     }
 
-    private static func isSentencePunctuation(_ character: Character) -> Bool {
-        character == "、" || character == "。" || character == "？" || character == "?"
+    private static func hasContent(_ text: String) -> Bool {
+        text.contains { !$0.isWhitespace && $0 != "、" && $0 != "。" }
     }
 
-    private static func hasContent(_ text: String) -> Bool {
-        text.contains { !$0.isWhitespace && !isSentencePunctuation($0) }
+    /// 「?」のない原文に足された、「か」の直後の「？」を比較から外す。
+    /// 足した「？」に句読点が続く候補は nil にする。
+    private static func removingAddedQuestionMarks(_ text: String) -> String? {
+        let characters = Array(text)
+        var result = ""
+        for (index, character) in characters.enumerated() {
+            guard character == "?", index > 0, characters[index - 1] == "か" else {
+                result.append(character)
+                continue
+            }
+            if index + 1 < characters.count, ["、", "。", "?"].contains(characters[index + 1]) { return nil }
+        }
+        return result
     }
 
     /// 続きがある語尾の原文には、モデルが付けた末尾の「。」を残さない。
@@ -67,7 +80,7 @@ enum HaasProofreadValidator {
     }
 
     private static func stripPunctuation(_ text: String) -> String {
-        text.filter { !isSentencePunctuation($0) }
+        text.filter { $0 != "、" && $0 != "。" }
     }
 
     private static func isJapanese(_ scalar: Unicode.Scalar) -> Bool {
@@ -80,7 +93,7 @@ enum HaasProofreadValidator {
     }
 
     private static func isSeparator(_ character: Character) -> Bool {
-        character.isWhitespace || isSentencePunctuation(character)
+        character.isWhitespace || character == "、" || character == "。"
             || character.unicodeScalars.allSatisfy(isJapanese)
     }
 

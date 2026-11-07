@@ -17,6 +17,45 @@ final class HaasProofreadValidatorTests: XCTestCase {
             "これは端末内で処理しますか？")
     }
 
+    func testKeepsQuestionMarksOutsideJapaneseSentences() {
+        XCTAssertNil(HaasProofreadValidator.validatedCandidate(
+            "型はStringです", preserving: "型はString?です", protectedTerms: []))
+        XCTAssertNil(HaasProofreadValidator.validatedCandidate(
+            "example.com/search、q=1を開きます", preserving: "example.com/search?q=1を開きます", protectedTerms: []))
+        XCTAssertNil(HaasProofreadValidator.validatedCandidate(
+            "https://example.com/検索q=1を開きます", preserving: "https://example.com/検索?q=1を開きます", protectedTerms: []))
+        XCTAssertNil(HaasProofreadValidator.validatedCandidate(
+            "型は結果です", preserving: "型は結果?です", protectedTerms: []))
+        XCTAssertNil(HaasProofreadValidator.validatedCandidate(
+            "/なにかq=1を開きます", preserving: "/なにか?q=1を開きます", protectedTerms: []))
+        XCTAssertNil(HaasProofreadValidator.validatedCandidate(
+            "型はなにかです", preserving: "型はなにか?です", protectedTerms: []))
+        XCTAssertNil(HaasProofreadValidator.validatedCandidate(
+            "https://example.com/なにか、検索=1", preserving: "https://example.com/なにか?検索=1", protectedTerms: []))
+        XCTAssertNil(HaasProofreadValidator.validatedCandidate(
+            "https://example.com/なにか、検索=1を開きますか？",
+            preserving: "https://example.com/なにか?検索=1を開きますか", protectedTerms: []))
+        XCTAssertNil(HaasProofreadValidator.validatedCandidate(
+            "これで合っていますか？？", preserving: "これで合っていますか", protectedTerms: []))
+        XCTAssertNil(HaasProofreadValidator.validatedCandidate(
+            "確認しましたか？。", preserving: "確認しましたか。", protectedTerms: []))
+    }
+
+    func testAcceptsQuestionMarkInsideSentenceAndQuote() {
+        XCTAssertEqual(HaasProofreadValidator.validatedCandidate(
+            "合っていますか？次に進みます。", preserving: "合っていますか次に進みます", protectedTerms: []),
+            "合っていますか？次に進みます。")
+        XCTAssertEqual(HaasProofreadValidator.validatedCandidate(
+            "「合っていますか？」", preserving: "「合っていますか」", protectedTerms: []),
+            "「合っていますか？」")
+        XCTAssertEqual(HaasProofreadValidator.validatedCandidate(
+            "確認しましたか？URLを開きます。", preserving: "確認しましたかURLを開きます", protectedTerms: []),
+            "確認しましたか？URLを開きます。")
+        XCTAssertEqual(HaasProofreadValidator.validatedCandidate(
+            "合っていますか？次に進みます。", preserving: "合っていますか？次に進みます", protectedTerms: []),
+            "合っていますか？次に進みます。")
+    }
+
     func testRejectsLargeRewritesAndAddedLines() {
         XCTAssertNil(HaasProofreadValidator.validatedCandidate(
             "会議は延期です。", preserving: "来週の打ち合わせは火曜日の午後に変更になりました", protectedTerms: []))
