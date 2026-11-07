@@ -32,12 +32,13 @@ enum HaasAppConfiguration {
 }
 
 enum HaasDestination: String, CaseIterable, Identifiable {
-    case home, history, dictionary, settings
+    case home, usage, history, dictionary, settings
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .home: "ホーム"
+        case .usage: "記録"
         case .history: "履歴"
         case .dictionary: "辞書"
         case .settings: "設定"
@@ -47,6 +48,7 @@ enum HaasDestination: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .home: "mic.fill"
+        case .usage: "leaf.fill"
         case .history: "clock.arrow.circlepath"
         case .dictionary: "text.book.closed"
         case .settings: "gearshape"

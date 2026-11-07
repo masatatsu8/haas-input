@@ -63,6 +63,8 @@ private struct HaasMainView: View {
                 switch app.selectedDestination {
                 case .home:
                     HaasHomeView(app: app, engine: engine, shortcuts: shortcuts)
+                case .usage:
+                    if let recorder = app.usageRecorder { HaasUsageView(recorder: recorder) }
                 case .history:
                     HaasHistoryView(selectedID: $app.selectedHistoryID, activeAudioURL: engine.activeAudioURL)
                 case .dictionary:

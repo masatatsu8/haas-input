@@ -127,4 +127,9 @@ final class HaasUsageStatisticsTests: XCTestCase {
         XCTAssertEqual(result.grid.count, 371)
         XCTAssertTrue(result.grid.allSatisfy { !$0.isUsed && result.level(for: $0) == 0 })
     }
+
+    func testDestinationOrderPlacesUsageAfterHome() {
+        XCTAssertEqual(HaasDestination.allCases.map(\.rawValue), ["home", "usage", "history", "dictionary", "settings"])
+        XCTAssertEqual(HaasDestination.usage.title, "記録")
+    }
 }
