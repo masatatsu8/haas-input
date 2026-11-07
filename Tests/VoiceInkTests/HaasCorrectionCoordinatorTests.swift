@@ -216,6 +216,39 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.replacer.copies, ["巽です"])
     }
 
+    func testFieldThatLagsBehindBackspaceIsReadAgain() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        let field = FakeField(text: "前の文。たつみです")
+        // Backspace の後、2回読むまでは前の中身を返す (ブラウザなど)
+        field.staleReadsAfterBackspace = 2
+        fixture.deliver(text: "たつみです", field: field)
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        XCTAssertEqual(draft.decision, .replaceAutomatically(deleteCount: 5))
+
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "巽です", register: [])
+
+        XCTAssertEqual(outcome.result, .replaced)
+        XCTAssertEqual(field.backspaces, 5)
+        XCTAssertEqual(field.text, "前の文。巽です")
+    }
+
+    func testFieldThatNeverCatchesUpStopsAfterWaiting() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        let field = FakeField(text: "前の文。たつみです")
+        field.staleReadsAfterBackspace = .max
+        fixture.deliver(text: "たつみです", field: field)
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "巽です", register: [])
+
+        XCTAssertEqual(outcome.result, .copied(interruptedMessage))
+        XCTAssertEqual(fixture.replacer.lastOutcome, .deletionInterrupted(deleted: 1))
+        XCTAssertEqual(field.backspaces, 1)
+        XCTAssertEqual(fixture.replacer.copies, ["巽です"])
+    }
+
     func testUnreadableTargetReplacesWithoutFieldCheck() async throws {
         let fixture = try CorrectionFixture()
         defer { fixture.cleanUp() }
@@ -456,15 +489,28 @@ private final class FakeField {
     var selectionLength = 0
     var readable = true
     var selectAfterBackspaces: Int?
+    /// Backspace の後、この回数読むまでは前の中身を返す
+    var staleReadsAfterBackspace = 0
     private(set) var backspaces = 0
+    private var staleText: String?
+    private var staleReadsLeft = 0
 
     init(text: String) { self.text = text }
 
     var state: HaasFieldState {
-        readable ? .readable(textBeforeCaret: text, selectionLength: selectionLength) : .unreadable
+        guard readable else { return .unreadable }
+        if let staleText, staleReadsLeft > 0 {
+            staleReadsLeft -= 1
+            return .readable(textBeforeCaret: staleText, selectionLength: selectionLength)
+        }
+        return .readable(textBeforeCaret: text, selectionLength: selectionLength)
     }
 
     func backspace() {
+        if staleReadsAfterBackspace > 0 {
+            staleText = text
+            staleReadsLeft = staleReadsAfterBackspace
+        }
         if !text.isEmpty { text.removeLast() }
         backspaces += 1
         if backspaces == selectAfterBackspaces { selectionLength = 1 }
@@ -525,11 +571,16 @@ private final class FakeReplacer: HaasCorrectionReplacing {
     private(set) var lastOutcome: HaasReplaceOutcome?
 
     func replace(
-        _ text: String, deleteCount: Int, shouldContinue: @escaping (_ deleted: Int) -> Bool,
+        _ text: String, deleteCount: Int, shouldContinue: @escaping (_ deleted: Int) async -> Bool,
         pasteGuard: @escaping () -> Bool
     ) async -> HaasReplaceOutcome {
         calls.append(Call(text: text, deleteCount: deleteCount))
-        let outcome = forcedOutcome ?? simulate(text, deleteCount: deleteCount, shouldContinue, pasteGuard)
+        let outcome: HaasReplaceOutcome
+        if let forcedOutcome {
+            outcome = forcedOutcome
+        } else {
+            outcome = await simulate(text, deleteCount: deleteCount, shouldContinue, pasteGuard)
+        }
         lastOutcome = outcome
         return outcome
     }
@@ -541,15 +592,15 @@ private final class FakeReplacer: HaasCorrectionReplacing {
 
     /// CursorPaster.runReplacement と同じ順で確かめる
     private func simulate(
-        _ text: String, deleteCount: Int, _ shouldContinue: (Int) -> Bool, _ pasteGuard: () -> Bool
-    ) -> HaasReplaceOutcome {
+        _ text: String, deleteCount: Int, _ shouldContinue: (Int) async -> Bool, _ pasteGuard: () -> Bool
+    ) async -> HaasReplaceOutcome {
         var deleted = 0
         while deleted < deleteCount {
-            guard shouldContinue(deleted) else { return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted) }
+            guard await shouldContinue(deleted) else { return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted) }
             field?.backspace()
             deleted += 1
         }
-        guard shouldContinue(deleted) else { return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted) }
+        guard await shouldContinue(deleted) else { return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted) }
         guard pasteGuard() else { return .pasteUncertain }
         field?.text += text
         return .completed

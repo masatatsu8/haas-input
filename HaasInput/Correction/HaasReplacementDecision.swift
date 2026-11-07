@@ -67,4 +67,32 @@ enum HaasReplacementDecision: Equatable {
         let remaining = max(0, insertedText.count - deleted)
         return textBeforeCaret == textBeforeInsertion + String(insertedText.prefix(remaining))
     }
+
+    /// 消している途中の欄を、更新が追いつくまで少しの間だけ読み直して確かめる。
+    /// ブラウザなどでは Backspace の後しばらく前の中身を返すことがあるため、
+    /// 1つ前の段階 (deleted - 1) とちょうど一致する間だけ待つ。それ以外の中身はすぐに止める。
+    /// 期待どおりの中身とちょうど一致したときだけ true
+    static func awaitFieldProgress(
+        textBeforeInsertion: String, insertedText: String, deleted: Int,
+        readField: () -> HaasFieldState,
+        window: Duration = .milliseconds(150),
+        pollInterval: Duration = .milliseconds(10)
+    ) async -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: window)
+        while true {
+            let field = readField()
+            if fieldMatchesProgress(
+                field, textBeforeInsertion: textBeforeInsertion, insertedText: insertedText, deleted: deleted)
+            {
+                return true
+            }
+            // deleted == 0 に前の段階はない。前の段階のまま以外は待たない
+            guard deleted > 0,
+                fieldMatchesProgress(
+                    field, textBeforeInsertion: textBeforeInsertion, insertedText: insertedText, deleted: deleted - 1),
+                ContinuousClock.now < deadline, !Task.isCancelled
+            else { return false }
+            try? await Task.sleep(for: pollInterval)
+        }
+    }
 }

@@ -254,9 +254,12 @@ final class HaasCorrectionCoordinator: ObservableObject {
             shouldContinue: { deleted in
                 guard isSafe() else { return false }
                 guard let textBeforeInsertion else { return true }
-                return HaasReplacementDecision.fieldMatchesProgress(
-                    target.fieldState(), textBeforeInsertion: textBeforeInsertion, insertedText: insertedText,
-                    deleted: deleted)
+                guard await HaasReplacementDecision.awaitFieldProgress(
+                    textBeforeInsertion: textBeforeInsertion, insertedText: insertedText, deleted: deleted,
+                    readField: { target.fieldState() })
+                else { return false }
+                // 読み直しで待った間の操作も見逃さない
+                return isSafe()
             },
             pasteGuard: isSafe)
         logger.notice("correction phase=replace outcome=\(String(describing: outcome), privacy: .public) app=\(target.diagnosticAppIdentifier, privacy: .public)")

@@ -70,24 +70,28 @@ final class CursorPaster {
     /// 末尾の deleteCount 文字を Backspace で消してから text を貼る。既存の貼り付けと同じ列に並べる
     /// - shouldContinue: Backspace の前ごと (deleted は消した数) と貼り付けの直前に呼ぶ。入力欄の中身の確認はここで行う
     /// - pasteGuard: 貼り付け (⌘V の前・途中・後) だけで使う。貼ると中身が変わるため入力欄の中身は見ない
+    /// - modifierFlags: 今押されている修飾キー。最初の Backspace の前に、⌘・⌥・⌃ が離れるのを待つのに使う
     @MainActor
     @discardableResult
     static func startReplaceAtCursor(
         _ text: String, deleteCount: Int,
-        shouldContinue: @escaping (_ deleted: Int) -> Bool,
-        pasteGuard: @escaping () -> Bool
+        shouldContinue: @escaping (_ deleted: Int) async -> Bool,
+        pasteGuard: @escaping () -> Bool,
+        modifierFlags: @escaping () -> CGEventFlags = { CGEventSource.flagsState(.combinedSessionState) }
     ) -> Task<HaasReplaceOutcome, Never> {
         enqueueSession {
             await performReplaceSession(
-                text, deleteCount: deleteCount, shouldContinue: shouldContinue, pasteGuard: pasteGuard)
+                text, deleteCount: deleteCount, shouldContinue: shouldContinue, pasteGuard: pasteGuard,
+                modifierFlags: modifierFlags)
         }
     }
 
     @MainActor
     private static func performReplaceSession(
         _ text: String, deleteCount: Int,
-        shouldContinue: @escaping (_ deleted: Int) -> Bool,
-        pasteGuard: @escaping () -> Bool
+        shouldContinue: @escaping (_ deleted: Int) async -> Bool,
+        pasteGuard: @escaping () -> Bool,
+        modifierFlags: @escaping () -> CGEventFlags
     ) async -> (outcome: HaasReplaceOutcome, clipboardRestoreTask: Task<Void, Never>?) {
         // 削除より前に、元のクリップボードを保存して貼る文を準備する
         guard let clipboard = prepareClipboard(for: text) else { return (.notStarted, nil) }
@@ -101,8 +105,14 @@ final class CursorPaster {
         }
         let outcome = await runReplacement(
             deleteCount: deleteCount,
-            // Backspace の前ごとに、クリップボードがこのセッションのままかも確かめる
-            shouldContinue: { deleted in ownsClipboard() && shouldContinue(deleted) },
+            beforeFirstBackspace: { await waitForModifiersReleased(flags: modifierFlags) },
+            // Backspace の前ごとに、クリップボードがこのセッションのままかも確かめる。
+            // 入力欄の確認は読み直しで待つことがあるので、待った後にもう一度確かめる
+            shouldContinue: { deleted in
+                guard ownsClipboard() else { return false }
+                guard await shouldContinue(deleted) else { return false }
+                return ownsClipboard()
+            },
             postBackspace: { await postBackspace() },
             paste: { await pasteFromClipboard(sessionID: sessionID, pasteRejection: pasteRejection) }
         )
@@ -111,24 +121,49 @@ final class CursorPaster {
     }
 
     /// 消す手順の本体。Backspace の前ごと、貼り付けの直前に shouldContinue で止められる。貼り付けの後は確認しない
+    /// - beforeFirstBackspace: 消す文字があるとき、最初の確認の前に1度だけ呼ぶ。false なら何も消さずに止める
     static func runReplacement(
         deleteCount: Int,
-        shouldContinue: (_ deleted: Int) -> Bool,
+        beforeFirstBackspace: () async -> Bool = { true },
+        shouldContinue: (_ deleted: Int) async -> Bool,
         postBackspace: () async -> Bool,
         paste: () async -> PasteResult
     ) async -> HaasReplaceOutcome {
+        // 待つ間に入力欄が変わりうるので、待ってから最初の確認をする
+        if deleteCount > 0, !(await beforeFirstBackspace()) { return .notStarted }
         var deleted = 0
         while deleted < deleteCount {
-            guard shouldContinue(deleted) else {
+            guard await shouldContinue(deleted) else {
                 return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted)
             }
             guard await postBackspace() else { return .deletionInterrupted(deleted: deleted) }
             deleted += 1
         }
-        guard shouldContinue(deleted) else {
+        guard await shouldContinue(deleted) else {
             return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted)
         }
         return await paste() == .commandPosted ? .completed : .pasteUncertain
+    }
+
+    /// Backspace と組み合わさると消す範囲が変わる修飾キー (⌘⌫ は行頭まで、⌥⌫ は1語)
+    static let backspaceAlteringModifiers: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
+
+    /// ⌘・⌥・⌃ がすべて離れるまで待つ。確定の ⌘↩ の ⌘ が押されたままのことがある。
+    /// 期限までに離れなければ false (何も消さない)
+    static func waitForModifiersReleased(
+        flags: () -> CGEventFlags,
+        timeout: Duration = .seconds(1),
+        pollInterval: Duration = .milliseconds(20)
+    ) async -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while true {
+            if flags().intersection(backspaceAlteringModifiers).isEmpty { return true }
+            guard ContinuousClock.now < deadline, !Task.isCancelled else {
+                logger.notice("Replace guard phase=before-backspace reason=modifiers-held")
+                return false
+            }
+            try? await Task.sleep(for: pollInterval)
+        }
     }
 
     /// Backspace (keyCode 0x33) を1回送る。印を付けて、利用者の操作と区別できるようにする

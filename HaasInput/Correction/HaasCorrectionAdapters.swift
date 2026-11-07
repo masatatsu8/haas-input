@@ -5,7 +5,7 @@ import Foundation
 @MainActor
 protocol HaasCorrectionReplacing {
     func replace(
-        _ text: String, deleteCount: Int, shouldContinue: @escaping (_ deleted: Int) -> Bool,
+        _ text: String, deleteCount: Int, shouldContinue: @escaping (_ deleted: Int) async -> Bool,
         pasteGuard: @escaping () -> Bool
     ) async -> HaasReplaceOutcome
     func copy(_ text: String) -> Bool
@@ -15,7 +15,7 @@ protocol HaasCorrectionReplacing {
 @MainActor
 struct HaasSystemCorrectionReplacer: HaasCorrectionReplacing {
     func replace(
-        _ text: String, deleteCount: Int, shouldContinue: @escaping (_ deleted: Int) -> Bool,
+        _ text: String, deleteCount: Int, shouldContinue: @escaping (_ deleted: Int) async -> Bool,
         pasteGuard: @escaping () -> Bool
     ) async -> HaasReplaceOutcome {
         await CursorPaster.startReplaceAtCursor(
