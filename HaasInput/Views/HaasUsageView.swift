@@ -42,6 +42,7 @@ struct HaasUsageView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     sectionLabel("この1年")
+                    Text(HaasUsageWording.yearHeadline(recordings: summary.gridRecordings)).font(.headline)
                     UsageGrass(summary: summary)
                     if summary.usedDays == 0 {
                         Text(HaasUsageWording.emptyHistory).font(.callout).foregroundStyle(.secondary)
@@ -53,6 +54,7 @@ struct HaasUsageView: View {
                               note: HaasUsageWording.durationEquivalent(summary.totalDuration))
                     UsageTile(title: "入力した文字", value: HaasUsageWording.characters(summary.totalCharacters),
                               note: HaasUsageWording.characterEquivalent(summary.totalCharacters))
+                    UsageTile(title: "入力した回数", value: HaasUsageWording.recordings(summary.totalRecordings), note: nil)
                     UsageTile(title: "使った日", value: "\(summary.usedDays)日",
                               note: summary.longestStreak > 0 ? "最長 \(summary.longestStreak)日連続" : nil)
                 }
@@ -89,8 +91,7 @@ struct HaasUsageView: View {
     @ViewBuilder
     private func todayAmount(_ summary: HaasUsageSummary) -> some View {
         if summary.today.isUsed {
-            Text(HaasUsageWording.duration(summary.today.duration) + " ・ "
-                + HaasUsageWording.characters(summary.today.characters))
+            Text(HaasUsageWording.todayAmount(summary.today))
                 .font(.system(size: 30, weight: .bold))
         } else {
             Text(HaasUsageWording.notUsedToday).font(.title2.bold())
@@ -137,6 +138,7 @@ struct HaasUsageView: View {
 private enum UsagePalette {
     static let empty = Color.secondary.opacity(0.15)
     static let today = Color.orange
+    static let border = Color.secondary.opacity(0.35)
     static let ring = Color.green
     static let bar = adaptive(light: 0x7BC96F, dark: 0x26A641)
     static let cheerText = adaptive(light: 0x1D6B3A, dark: 0x7EE2A0)
@@ -173,40 +175,117 @@ private enum UsageDateText {
         return japanese.veryShortWeekdaySymbols[japanese.component(.weekday, from: date) - 1]
     }
 
-    /// 「11月7日 12分 ・ 2,340文字」。使っていない日は日付だけ。
+    /// 「11月7日 12分 ・ 2,340文字 ・ 8回」。使っていない日は日付だけ。
     static func help(_ day: HaasUsageDay) -> String {
         let date = day.day.formatted(Date.FormatStyle(locale: Locale(identifier: "ja_JP")).month().day())
-        guard day.isUsed else { return date }
-        return "\(date) \(HaasUsageWording.duration(day.duration)) ・ \(HaasUsageWording.characters(day.characters))"
+        return HaasUsageWording.dayHelp(date: date, day: day)
     }
 }
 
 /// 1年分の草。週ごとの列に並べ、幅に合わせて升目の大きさを変える。
+/// 枠の中に月・曜日・濃さの見本を置く。
 private struct UsageGrass: View {
     let summary: HaasUsageSummary
+    @State private var availableWidth: CGFloat = 0
+
     private let spacing: CGFloat = 3
+    private let maxCell: CGFloat = 12
+    private let minCell: CGFloat = 4
+    private let weekdayWidth: CGFloat = 20
+    private let inset: CGFloat = 12
+    private let monthRowHeight: CGFloat = 16
+    private let monthLabelWidth: CGFloat = 24
+
+    private var weeks: [[HaasUsageDay]] {
+        stride(from: 0, to: summary.grid.count, by: 7).map { Array(summary.grid[$0..<min($0 + 7, summary.grid.count)]) }
+    }
 
     var body: some View {
-        let weeks = stride(from: 0, to: summary.grid.count, by: 7).map { Array(summary.grid[$0..<min($0 + 7, summary.grid.count)]) }
-        HStack(alignment: .top, spacing: spacing) {
-            ForEach(weeks.indices, id: \.self) { index in
-                VStack(spacing: spacing) {
-                    ForEach(weeks[index], id: \.day) { day in cell(day) }
+        let weeks = weeks
+        let cell = cellSize(columns: weeks.count)
+        VStack(alignment: .leading, spacing: 0) {
+            // 幅の測定用。見た目には出ない
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: 0)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
+
+            VStack(alignment: .leading, spacing: 6) {
+                monthRow(weeks: weeks, cell: cell)
+                HStack(alignment: .top, spacing: spacing) {
+                    weekdayColumn(cell: cell)
+                    ForEach(weeks.indices, id: \.self) { index in
+                        VStack(spacing: spacing) {
+                            ForEach(weeks[index], id: \.day) { day in self.cell(day, size: cell) }
+                        }
+                    }
                 }
+                legend
+            }
+            .padding(inset)
+            .overlay { RoundedRectangle(cornerRadius: 8).stroke(UsagePalette.border, lineWidth: 1) }
+        }
+    }
+
+    private func cellSize(columns: Int) -> CGFloat {
+        let columns = CGFloat(max(columns, 1))
+        let room = availableWidth - 2 * inset - weekdayWidth - spacing * columns
+        return min(maxCell, max(minCell, (room / columns).rounded(.down)))
+    }
+
+    private func monthRow(weeks: [[HaasUsageDay]], cell: CGFloat) -> some View {
+        // 升目が小さいときは「10月」の幅 (約24pt) に足りる列数だけ離す
+        let gap = max(2, Int((monthLabelWidth / (cell + spacing)).rounded(.up)))
+        let marks = HaasUsageWording.monthMarks(
+            weekStarts: weeks.compactMap { $0.first?.day }, calendar: .current, minimumGap: gap)
+        return ZStack(alignment: .topLeading) {
+            ForEach(marks, id: \.column) { mark in
+                Text(mark.text)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    .offset(x: weekdayWidth + spacing + CGFloat(mark.column) * (cell + spacing))
             }
         }
-        .frame(maxWidth: CGFloat(weeks.count) * (12 + spacing), alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: monthRowHeight, maxHeight: monthRowHeight, alignment: .topLeading)
+    }
+
+    private func weekdayColumn(cell: CGFloat) -> some View {
+        let labels = HaasUsageWording.weekdayLabels(firstWeekday: Calendar.current.firstWeekday)
+        return VStack(alignment: .trailing, spacing: spacing) {
+            ForEach(labels.indices, id: \.self) { row in
+                Text(labels[row] ?? "")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    .frame(height: cell)
+            }
+        }
+        .frame(width: weekdayWidth, alignment: .trailing)
+    }
+
+    private var legend: some View {
+        HStack(spacing: 4) {
+            Spacer()
+            Text(HaasUsageWording.legendLess).font(.caption2).foregroundStyle(.secondary)
+            ForEach(0...4, id: \.self) { level in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(UsagePalette.grass(level: level))
+                    .frame(width: 12, height: 12)
+            }
+            Text(HaasUsageWording.legendMore).font(.caption2).foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder
-    private func cell(_ day: HaasUsageDay) -> some View {
+    private func cell(_ day: HaasUsageDay, size: CGFloat) -> some View {
         let shape = RoundedRectangle(cornerRadius: 2)
         if day.day > summary.today.day {
-            Color.clear.aspectRatio(1, contentMode: .fit)
+            Color.clear.frame(width: size, height: size)
         } else {
             shape
                 .fill(UsagePalette.grass(level: summary.level(for: day)))
-                .aspectRatio(1, contentMode: .fit)
+                .frame(width: size, height: size)
                 .overlay {
                     if day.day == summary.today.day {
                         shape.stroke(UsagePalette.today, lineWidth: 2).padding(-1.5)
