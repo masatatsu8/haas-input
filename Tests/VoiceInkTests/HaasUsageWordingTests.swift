@@ -196,6 +196,13 @@ final class HaasUsageWordingTests: XCTestCase {
         ])
     }
 
+    func testMonthMarksDropLabelsCloserThanMinimumGap() {
+        // 10/24, 10/31, 11/7, 11/14, 11/21 : 升目が小さく3列空けたいときは、2列先の11月に譲って10月を出さない
+        let marks = HaasUsageWording.monthMarks(
+            weekStarts: weekStarts(from: date(2026, 10, 24), count: 5), calendar: calendar, minimumGap: 3)
+        XCTAssertEqual(marks, [HaasUsageMonthMark(column: 2, text: "11月")])
+    }
+
     func testMonthMarksEmptyForNoColumns() {
         XCTAssertEqual(HaasUsageWording.monthMarks(weekStarts: [], calendar: calendar), [])
     }

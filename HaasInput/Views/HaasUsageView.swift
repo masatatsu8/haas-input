@@ -194,6 +194,7 @@ private struct UsageGrass: View {
     private let weekdayWidth: CGFloat = 20
     private let inset: CGFloat = 12
     private let monthRowHeight: CGFloat = 16
+    private let monthLabelWidth: CGFloat = 24
 
     private var weeks: [[HaasUsageDay]] {
         stride(from: 0, to: summary.grid.count, by: 7).map { Array(summary.grid[$0..<min($0 + 7, summary.grid.count)]) }
@@ -233,7 +234,10 @@ private struct UsageGrass: View {
     }
 
     private func monthRow(weeks: [[HaasUsageDay]], cell: CGFloat) -> some View {
-        let marks = HaasUsageWording.monthMarks(weekStarts: weeks.compactMap { $0.first?.day }, calendar: .current)
+        // 升目が小さいときは「10月」の幅 (約24pt) に足りる列数だけ離す
+        let gap = max(2, Int((monthLabelWidth / (cell + spacing)).rounded(.up)))
+        let marks = HaasUsageWording.monthMarks(
+            weekStarts: weeks.compactMap { $0.first?.day }, calendar: .current, minimumGap: gap)
         return ZStack(alignment: .topLeading) {
             ForEach(marks, id: \.column) { mark in
                 Text(mark.text)

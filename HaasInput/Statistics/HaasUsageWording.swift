@@ -55,15 +55,15 @@ enum HaasUsageWording {
     }
 
     /// 月が変わる列に月の見出しを置く。先頭の列は月の途中でも置く。
-    /// 次の見出しと2列未満しか離れていない見出しは、重なるので出さない。
-    static func monthMarks(weekStarts: [Date], calendar: Calendar) -> [HaasUsageMonthMark] {
+    /// 次の見出しと minimumGap 列未満しか離れていない見出しは、重なるので出さない。
+    static func monthMarks(weekStarts: [Date], calendar: Calendar, minimumGap: Int = 2) -> [HaasUsageMonthMark] {
         var marks: [HaasUsageMonthMark] = []
         var previousMonth: Int?
         for (column, start) in weekStarts.enumerated() {
             let month = calendar.component(.month, from: start)
             guard month != previousMonth else { continue }
             previousMonth = month
-            if let last = marks.last, column - last.column < 2 { marks.removeLast() }
+            if let last = marks.last, column - last.column < minimumGap { marks.removeLast() }
             marks.append(HaasUsageMonthMark(column: column, text: "\(month)月"))
         }
         return marks
