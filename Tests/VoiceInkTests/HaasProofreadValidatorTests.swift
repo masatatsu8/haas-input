@@ -84,6 +84,7 @@ final class HaasProofreadValidatorTests: XCTestCase {
             ("確認したので", "確認したので。", "確認したので"),
             ("端末ないで処理してから", "端末内で処理してから。", "端末内で処理してから"),
             ("確認したので」", "確認したので。」", "確認したので」"),
+            ("ちょっとね間が開くと", "ちょっとね、間が開くと。", "ちょっとね、間が開くと"),
         ] {
             XCTAssertEqual(HaasProofreadValidator.validatedCandidate(
                 candidate, preserving: original, protectedTerms: []), expected, original)

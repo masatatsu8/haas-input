@@ -227,6 +227,45 @@ final class HaasPunctuationWorkerTests: XCTestCase {
     private func occupyCurrentActor(for interval: TimeInterval) {
         Thread.sleep(forTimeInterval: interval)
     }
+
+    /// 自然さ優先: 区切れた語尾の末尾の「。」だけを外し、途中の「、」は残す。
+    func testNaturalModeDropsOnlyTrailingPeriodAfterUnfinishedEnding() async throws {
+        let cases: [(String, String, String)] = [
+            ("ちょっとね間が開くと", "ちょっとね、間が開くと。", "ちょっとね、間が開くと"),
+            ("資料を確認してから", "資料を確認してから。", "資料を確認してから"),
+            ("「開くと」", "「開くと。」", "「開くと」"),
+            ("確認します", "確認します。", "確認します。"),
+        ]
+        try await assertNaturalResults(cases)
+    }
+
+    func testNaturalModeDropsTrailingPeriodForEveryUnfinishedEnding() async throws {
+        let cases = HaasPunctuationFormatter.unfinishedEndings.map { ending in
+            ("これは" + ending, "これは" + ending + "。", "これは" + ending)
+        }
+        XCTAssertEqual(cases.count, 25)
+        try await assertNaturalResults(cases)
+    }
+
+    private func assertNaturalResults(_ cases: [(String, String, String)]) async throws {
+        for (original, model, expected) in cases {
+            let generator = ControlledPunctuationGenerator()
+            defer { generator.cancelPending() }
+            let worker = HaasPunctuationWorker(generator: generator, timeout: .seconds(2))
+            let started = expectation(description: "started \(original)")
+            let completed = expectation(description: "completed \(original)")
+            generator.onStarted = { _ in started.fulfill() }
+            var results: [String?] = []
+            XCTAssertTrue(worker.submit(original, requestID: UUID()) {
+                results.append($0)
+                completed.fulfill()
+            })
+            await fulfillment(of: [started], timeout: 1)
+            try generator.complete(index: 0, result: .success(model))
+            await fulfillment(of: [completed], timeout: 1)
+            XCTAssertEqual(results, [expected], original)
+        }
+    }
 }
 
 private enum InjectedGenerationError: Error { case failed }

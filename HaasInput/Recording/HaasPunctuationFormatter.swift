@@ -3,7 +3,11 @@ import Foundation
 enum HaasPunctuationFormatter {
     private static let sentenceEndings = ["です", "ます", "でした", "ました", "ません", "ください"]
     private static let questionEndings = ["ですか", "ますか", "でしょうか", "ませんか", "でしたか", "ましたか"]
-    static let unfinishedEndings = ["ので", "ですが", "あとで", "けれども", "けれど", "けど", "のに", "ながら"]
+    /// 間が空いて区切れても文が続く語尾(接続助詞・格助詞など)。末尾に「。」を付けない。
+    static let unfinishedEndings = [
+        "ので", "ですが", "あとで", "けれども", "けれど", "けど", "のに", "ながら",
+        "から", "まで", "けども", "たら", "て", "で", "と", "が", "を", "に", "は", "も", "し", "ば", "や", "へ", "より",
+    ]
     private static let punctuation = Set("、。，．,.!?！？".unicodeScalars)
     private static let openingMarks = Set("「『（([{【〈《“‘\"'".unicodeScalars)
     static let closingMarks = Set("」』）)]}】〉》”’\"'".unicodeScalars)
@@ -72,6 +76,34 @@ enum HaasPunctuationFormatter {
             if scalar == "。", isUnfinished, consumed >= end { return nil }
         }
         return consumed == source.count ? candidate : nil
+    }
+
+    /// 続きがある語尾の原文には、モデルが付けた末尾の「。」を残さない。
+    static func removingPeriodAfterUnfinishedEnding(_ candidate: String, original: String) -> String {
+        let closing = closingMarks
+        func trimmedEnd(_ text: String) -> String.UnicodeScalarView.Index {
+            let scalars = text.unicodeScalars
+            var end = scalars.endIndex
+            while end > scalars.startIndex {
+                let previous = scalars.index(before: end)
+                let scalar = scalars[previous]
+                guard CharacterSet.whitespacesAndNewlines.contains(scalar) || closing.contains(scalar) else { break }
+                end = previous
+            }
+            return end
+        }
+        let originalEnd = trimmedEnd(original)
+        guard unfinishedEndings.contains(where: { String(original.unicodeScalars[..<originalEnd]).hasSuffix($0) }) else {
+            return candidate
+        }
+        let end = trimmedEnd(candidate)
+        let scalars = candidate.unicodeScalars
+        guard end > scalars.startIndex else { return candidate }
+        let last = scalars.index(before: end)
+        guard scalars[last] == "。" else { return candidate }
+        var result = String.UnicodeScalarView(scalars[..<last])
+        result.append(contentsOf: scalars[end...])
+        return String(result)
     }
 
     private static func isLatinIdentifierScalar(_ scalar: Unicode.Scalar) -> Bool {

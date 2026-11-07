@@ -3,7 +3,6 @@ import Foundation
 enum HaasProofreadValidator {
     static let maximumEditRatio = 0.2
     static let minimumEditAllowance = 2
-    private static let unfinishedEndings = HaasPunctuationFormatter.unfinishedEndings + ["から", "て"]
 
     static func validatedCandidate(_ candidate: String, preserving original: String, protectedTerms: [String]) -> String? {
         guard !candidate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
@@ -23,7 +22,7 @@ enum HaasProofreadValidator {
         for term in protectedTerms where !term.isEmpty {
             if occurrences(of: term, in: original) != occurrences(of: term, in: candidate) { return nil }
         }
-        let result = removingPeriodAfterUnfinishedEnding(candidate, original: original)
+        let result = HaasPunctuationFormatter.removingPeriodAfterUnfinishedEnding(candidate, original: original)
         if hasContent(original), !hasContent(result) { return nil }
         return result
     }
@@ -45,34 +44,6 @@ enum HaasProofreadValidator {
             if index + 1 < characters.count, ["、", "。", "?"].contains(characters[index + 1]) { return nil }
         }
         return result
-    }
-
-    /// 続きがある語尾の原文には、モデルが付けた末尾の「。」を残さない。
-    private static func removingPeriodAfterUnfinishedEnding(_ candidate: String, original: String) -> String {
-        let closing = HaasPunctuationFormatter.closingMarks
-        func trimmedEnd(_ text: String) -> String.UnicodeScalarView.Index {
-            let scalars = text.unicodeScalars
-            var end = scalars.endIndex
-            while end > scalars.startIndex {
-                let previous = scalars.index(before: end)
-                let scalar = scalars[previous]
-                guard CharacterSet.whitespacesAndNewlines.contains(scalar) || closing.contains(scalar) else { break }
-                end = previous
-            }
-            return end
-        }
-        let originalEnd = trimmedEnd(original)
-        guard unfinishedEndings.contains(where: { String(original.unicodeScalars[..<originalEnd]).hasSuffix($0) }) else {
-            return candidate
-        }
-        let end = trimmedEnd(candidate)
-        let scalars = candidate.unicodeScalars
-        guard end > scalars.startIndex else { return candidate }
-        let last = scalars.index(before: end)
-        guard scalars[last] == "。" else { return candidate }
-        var result = String.UnicodeScalarView(scalars[..<last])
-        result.append(contentsOf: scalars[end...])
-        return String(result)
     }
 
     private static func normalized(_ text: String) -> String {

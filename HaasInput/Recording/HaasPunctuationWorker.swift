@@ -62,7 +62,10 @@ final class HaasPunctuationWorker {
     init(
         generator: (any HaasPunctuationGenerating)?, timeout: Duration = .seconds(1.5),
         validator: @escaping HaasCandidateValidator = { candidate, original, _ in
-            HaasPunctuationFormatter.validatedCandidate(candidate, preserving: original)
+            // 語尾が続く原文では、モデルの「、」を残したまま末尾の「。」だけ外してから検証する
+            HaasPunctuationFormatter.validatedCandidate(
+                HaasPunctuationFormatter.removingPeriodAfterUnfinishedEnding(candidate, original: original),
+                preserving: original)
         }
     ) {
         self.generator = generator
