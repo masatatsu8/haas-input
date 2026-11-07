@@ -5,14 +5,17 @@ import os
 
 @MainActor
 final class RecordingShortcutManager: ObservableObject {
+    // 録音のショートカットの選択や方式が変わると、入力後の見張りの除外の一覧が古くなるので、見張りを打ち切る
     @Published var primaryRecordingShortcut: ShortcutSelection {
         didSet {
+            invalidateInputWatch()
             UserDefaults.standard.set(primaryRecordingShortcut.rawValue, forKey: "primaryRecordingShortcut")
             refreshShortcutMonitoring(reason: "primary-selection")
         }
     }
     @Published var secondaryRecordingShortcut: ShortcutSelection {
         didSet {
+            invalidateInputWatch()
             if secondaryRecordingShortcut == .none { ShortcutStore.setShortcut(nil, for: .secondaryRecording) }
             UserDefaults.standard.set(secondaryRecordingShortcut.rawValue, forKey: "secondaryRecordingShortcut")
             refreshShortcutMonitoring(reason: "secondary-selection")
@@ -20,6 +23,7 @@ final class RecordingShortcutManager: ObservableObject {
     }
     @Published var primaryRecordingShortcutMode: Mode {
         didSet {
+            invalidateInputWatch()
             UserDefaults.standard.set(primaryRecordingShortcutMode.rawValue, forKey: "primaryRecordingShortcutMode")
             shortcutModeHandler.resetShortcutState(for: .primaryRecording)
             shortcutMonitor.resetShortcutStates(for: [.primaryRecording])
@@ -28,6 +32,7 @@ final class RecordingShortcutManager: ObservableObject {
     }
     @Published var secondaryRecordingShortcutMode: Mode {
         didSet {
+            invalidateInputWatch()
             UserDefaults.standard.set(secondaryRecordingShortcutMode.rawValue, forKey: "secondaryRecordingShortcutMode")
             shortcutModeHandler.resetShortcutState(for: .secondaryRecording)
             shortcutMonitor.resetShortcutStates(for: [.secondaryRecording])
@@ -67,6 +72,8 @@ final class RecordingShortcutManager: ObservableObject {
     private let isRecorderVisible: @MainActor () -> Bool
     private let pasteLastTranscription: @MainActor () -> Void
     private let openHistory: @MainActor () -> Void
+    private let correctLastInput: @MainActor () -> Void
+    private let invalidateInputWatch: @MainActor () -> Void
     private let shortcutMonitor = ShortcutMonitor(owner: "recording")
     private let shortcutModeHandler: RecordingShortcutModeHandler
     private let recorderPanelShortcutManager: RecorderPanelShortcutManager
@@ -83,7 +90,9 @@ final class RecordingShortcutManager: ObservableObject {
         toggleRecording: @escaping @MainActor () async -> Void,
         cancelRecording: @escaping @MainActor () async -> Void,
         pasteLastTranscription: @escaping @MainActor () -> Void,
-        openHistory: @escaping @MainActor () -> Void
+        openHistory: @escaping @MainActor () -> Void,
+        correctLastInput: @escaping @MainActor () -> Void,
+        invalidateInputWatch: @escaping @MainActor () -> Void
     ) {
         ShortcutMigration.migrateLegacyShortcutsIfNeeded()
         primaryRecordingShortcut = ShortcutMigration.migrateShortcutSelection(action: .primaryRecording, allowsNone: false)
@@ -94,6 +103,8 @@ final class RecordingShortcutManager: ObservableObject {
         self.isRecorderVisible = isRecorderVisible
         self.pasteLastTranscription = pasteLastTranscription
         self.openHistory = openHistory
+        self.correctLastInput = correctLastInput
+        self.invalidateInputWatch = invalidateInputWatch
         let handler = RecordingShortcutModeHandler(
             canHandleShortcutAction: {
                 recordingState() != .transcribing && recordingState() != .busy
@@ -193,10 +204,21 @@ final class RecordingShortcutManager: ObservableObject {
         }
     }
 
+    /// ショートカットに一致したキー入力は ShortcutMonitor が止めるので、全体の見張りには届かない。
+    /// 訂正以外のユーティリティ操作は、実行する前に見張りを打ち切る。
+    static func invalidatesInputWatch(_ action: ShortcutAction) -> Bool {
+        switch action {
+        case .pasteLastTranscription, .openQuickHistory: return true
+        default: return false
+        }
+    }
+
     private func handleUtilityShortcut(_ action: ShortcutAction) {
+        if Self.invalidatesInputWatch(action) { invalidateInputWatch() }
         switch action {
         case .pasteLastTranscription: pasteLastTranscription()
         case .openQuickHistory: openHistory()
+        case .correctLastInput: correctLastInput()
         default: break
         }
     }

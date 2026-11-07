@@ -17,6 +17,7 @@ final class HaasAppModel: ObservableObject {
     private(set) var usageRecorder: HaasUsageRecorder?
     private(set) var presentation: HaasRecorderPresentation?
     private(set) var shortcuts: RecordingShortcutManager?
+    private(set) var correctionPanel: HaasCorrectionPanelController?
     var openMainWindow: (() -> Void)?
 
     private var subscriptions = Set<AnyCancellable>()
@@ -35,6 +36,15 @@ final class HaasAppModel: ObservableObject {
             self.engine = engine
             let presentation = HaasRecorderPresentation(engine: engine)
             self.presentation = presentation
+            let correctionCoordinator = HaasCorrectionCoordinator(
+                delivery: engine.inputDelivery,
+                monitor: HaasUserInputMonitor.shared,
+                replacer: HaasSystemCorrectionReplacer(),
+                settings: HaasSettingsStore.shared,
+                modelContext: persistence.mainContext,
+                isIdle: { [weak engine] in engine?.recordingState == .idle })
+            let correctionPanel = HaasCorrectionPanelController(coordinator: correctionCoordinator)
+            self.correctionPanel = correctionPanel
             let shortcuts = RecordingShortcutManager(
                 recordingState: { [weak engine] in engine?.recordingState ?? .idle },
                 isRecorderVisible: { [weak presentation] in presentation?.isRecorderPanelVisible ?? false },
@@ -45,7 +55,9 @@ final class HaasAppModel: ObservableObject {
                 toggleRecording: { [weak engine] in await engine?.toggleRecording() },
                 cancelRecording: { [weak engine] in await engine?.cancelRecording() },
                 pasteLastTranscription: { [weak engine] in engine?.pasteLastTranscription() },
-                openHistory: { [weak self] in self?.show(.history) }
+                openHistory: { [weak self] in self?.show(.history) },
+                correctLastInput: { [weak correctionPanel] in correctionPanel?.show() },
+                invalidateInputWatch: { HaasUserInputMonitor.shared.invalidate() }
             )
             self.shortcuts = shortcuts
 

@@ -17,13 +17,8 @@ struct HaasVocabularyMatcher {
         var ambiguousKeys: Set<String> = []
         let trimmedForms = entries.map { $0.writtenForm.trimmingCharacters(in: .whitespacesAndNewlines) }
         for (entry, writtenForm) in zip(entries, trimmedForms) {
-            guard !writtenForm.isEmpty else { continue }
-            var sources = entry.readings
-            if Self.isKanaOnly(writtenForm) { sources.append(writtenForm) }
-            for source in sources {
-                guard let key = Self.key(forReading: source),
-                      key.count >= Self.minimumKeyLength,
-                      !ambiguousKeys.contains(key) else { continue }
+            for key in Self.matchingKeys(writtenForm: writtenForm, readings: entry.readings) {
+                guard !ambiguousKeys.contains(key) else { continue }
                 if let existing = forms[key], existing != writtenForm {
                     forms[key] = nil
                     ambiguousKeys.insert(key)
@@ -124,7 +119,25 @@ struct HaasVocabularyMatcher {
         character.unicodeScalars.contains { ($0.value >= 0x30 && $0.value <= 0x39) || (0xFF10...0xFF19).contains($0.value) }
     }
 
-    private static func key(forReading reading: String) -> String? {
+    /// 語の照合に使うキー (正規化した読み)。読みと、カナだけの正式表記から作る。短すぎるキーは含まない。
+    /// 照合、訂正の候補づくり、登録前の確認で同じものを使う
+    static func matchingKeys(writtenForm: String, readings: [String]) -> [String] {
+        let form = writtenForm.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !form.isEmpty else { return [] }
+        var sources = readings
+        if isKanaOnly(form) { sources.append(form) }
+        return sources.compactMap { source in
+            guard let key = key(forReading: source), key.count >= minimumKeyLength else { return nil }
+            return key
+        }
+    }
+
+    static func matchingKeys(of entry: HaasVocabularyEntry) -> [String] {
+        matchingKeys(writtenForm: entry.writtenForm, readings: entry.readings)
+    }
+
+    /// 読み1つを照合と同じ方法で正規化したキー。照合に使えない読みなら nil (短さは見ない)
+    static func key(forReading reading: String) -> String? {
         if isKanaOnly(reading) {
             let key = HaasJapaneseReading.matchKey(reading)
             return key.isEmpty ? nil : key

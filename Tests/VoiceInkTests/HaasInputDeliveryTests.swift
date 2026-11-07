@@ -1,8 +1,219 @@
+import SwiftData
 import XCTest
 @testable import VoiceInk
 
 @MainActor
 final class HaasInputDeliveryTests: XCTestCase {
+    func testBeginStartsInputWatch() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        XCTAssertNil(fixture.delivery.watchToken)
+        try await fixture.delivery.begin(sessionID: UUID(), target: nil)
+        XCTAssertEqual(fixture.monitor.startCount, 1)
+        XCTAssertEqual(fixture.delivery.watchToken, fixture.monitor.lastToken)
+    }
+
+    func testLastDeliveredInputPairsRecordWithItsOwnWatchToken() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        XCTAssertNil(fixture.delivery.lastDeliveredInput)
+        let first = UUID(), transcriptionID = UUID()
+        try await fixture.delivery.begin(sessionID: first, target: AvailableInputTarget())
+        fixture.delivery.accept(sessionID: first, itemID: "item-1", text: "前半、")
+        fixture.delivery.accept(sessionID: first, itemID: "item-2", text: "後半。")
+        // 録音中は直前の入力として扱わない
+        XCTAssertNil(fixture.delivery.lastDeliveredInput)
+        await fixture.delivery.finish(sessionID: first)
+        fixture.delivery.attachTranscription(sessionID: first, transcriptionID: transcriptionID)
+
+        let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertEqual(input.sessionID, first)
+        XCTAssertEqual(input.transcriptionID, transcriptionID)
+        XCTAssertEqual(input.text, "前半、後半。")
+        XCTAssertTrue(input.allSegmentsPosted)
+        XCTAssertNotNil(input.target)
+        let firstToken = try XCTUnwrap(fixture.monitor.lastToken)
+        XCTAssertEqual(input.watchToken, firstToken)
+
+        // 開始に失敗しても、前回の記録と前回の印の組のまま返す
+        try fixture.breakStorageDirectory()
+        do {
+            try await fixture.delivery.begin(sessionID: UUID(), target: AvailableInputTarget())
+            XCTFail("保存できない開始は失敗する")
+        } catch {}
+        let afterFailure = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertEqual(afterFailure.sessionID, first)
+        XCTAssertEqual(afterFailure.watchToken, firstToken)
+    }
+
+    func testRecordsFieldOnlyBeforeFirstPaste() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let target = ReadableInputTarget(text: "前の文。")
+        fixture.paster.onStarted = { [paster = fixture.paster] in target.text += paster.calls.last?.text ?? "" }
+        let session = UUID()
+        try await fixture.delivery.begin(sessionID: session, target: target)
+        fixture.delivery.accept(sessionID: session, itemID: "item-1", text: "前半、")
+        fixture.delivery.accept(sessionID: session, itemID: "item-2", text: "後半。")
+        await fixture.delivery.finish(sessionID: session)
+
+        let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertEqual(target.text, "前の文。前半、後半。")
+        // 2つ目の区切りの前には読み直さない
+        XCTAssertEqual(input.insertionBaseline, .readable(textBeforeInsertion: "前の文。", textAfterInsertion: ""))
+        XCTAssertEqual(target.reads, 1)
+
+        // 次の録音では、その録音の最初の貼り付けの前に読み直す
+        let next = UUID()
+        try await fixture.delivery.begin(sessionID: next, target: target)
+        fixture.delivery.accept(sessionID: next, itemID: "item-1", text: "次。")
+        await fixture.delivery.finish(sessionID: next)
+        XCTAssertEqual(
+            fixture.delivery.lastDeliveredInput?.insertionBaseline,
+            .readable(textBeforeInsertion: "前の文。前半、後半。", textAfterInsertion: ""))
+    }
+
+    func testFieldWithSelectionBeforePasteIsRecordedAsUnreadable() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let target = ReadableInputTarget(text: "前の文。")
+        target.selectionLength = 2
+        let session = UUID()
+        try await fixture.delivery.begin(sessionID: session, target: target)
+        fixture.delivery.accept(sessionID: session, itemID: "item-1", text: "はい")
+        await fixture.delivery.finish(sessionID: session)
+        XCTAssertEqual(fixture.delivery.lastDeliveredInput?.insertionBaseline, .unreadable)
+    }
+
+    func testIgnoredPasteIntoFieldEndingWithSameTextIsNotReplaced() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        // 文字数の上限で貼り付けが無視される欄。元から「はい」で終わっている
+        let target = ReadableInputTarget(text: "はい")
+        let session = UUID()
+        try await fixture.delivery.begin(sessionID: session, target: target)
+        fixture.delivery.accept(sessionID: session, itemID: "item-1", text: "はい")
+        await fixture.delivery.finish(sessionID: session)
+        XCTAssertEqual(fixture.delivery.lastDeliveredInput?.allSegmentsPosted, true)
+
+        let schema = Schema([Transcription.self, WordReplacement.self])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let coordinator = HaasCorrectionCoordinator(
+            delivery: fixture.delivery, monitor: fixture.monitor, replacer: HaasSystemCorrectionReplacer(),
+            settings: HaasSettingsStore(defaults: fixture.defaults), modelContext: container.mainContext,
+            isIdle: { true }, captureReturnTarget: { nil }, waitForFocus: { _ in })
+        let draft = try XCTUnwrap(coordinator.begin())
+        XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
+    }
+
+    func testRejectedPasteThatOnlyMovesCaretPastSameTextIsNotReplaced() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        // 欄は「前|はい後」。入力先は「はい」の貼り付けを拒み、カーソルだけを「前はい|後」へ動かす
+        let target = ReadableInputTarget(text: "前", after: "はい後")
+        fixture.paster.onStarted = {
+            target.text += "はい"
+            target.after.removeFirst(2)
+        }
+        let session = UUID()
+        try await fixture.delivery.begin(sessionID: session, target: target)
+        fixture.delivery.accept(sessionID: session, itemID: "item-1", text: "はい")
+        await fixture.delivery.finish(sessionID: session)
+        let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertTrue(input.allSegmentsPosted)
+        XCTAssertEqual(input.insertionBaseline, .readable(textBeforeInsertion: "前", textAfterInsertion: "はい後"))
+
+        let schema = Schema([Transcription.self, WordReplacement.self])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let replacer = RecordingCorrectionReplacer()
+        let coordinator = HaasCorrectionCoordinator(
+            delivery: fixture.delivery, monitor: fixture.monitor, replacer: replacer,
+            settings: HaasSettingsStore(defaults: fixture.defaults), modelContext: container.mainContext,
+            isIdle: { true }, captureReturnTarget: { nil }, waitForFocus: { _ in })
+        let draft = try XCTUnwrap(coordinator.begin())
+        // カーソルの前だけなら「前」+「はい」と一致するが、後ろが記録と違うので消さない
+        XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
+
+        let outcome = await coordinator.confirm(draft, corrected: "いいえ", register: [])
+
+        XCTAssertEqual(outcome.result, .copied(HaasCorrectionCoordinator.copiedMessage))
+        XCTAssertEqual(replacer.replaceCount, 0)
+        XCTAssertEqual(replacer.copies, ["いいえ"])
+        XCTAssertEqual(target.text, "前はい")
+        XCTAssertEqual(target.after, "後")
+    }
+
+    func testLastDeliveredInputIsNotAllPostedWhenHeldOrEmpty() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let empty = UUID()
+        try await fixture.delivery.begin(sessionID: empty, target: AvailableInputTarget())
+        await fixture.delivery.finish(sessionID: empty)
+        XCTAssertEqual(fixture.delivery.lastDeliveredInput?.allSegmentsPosted, false)
+
+        let held = UUID()
+        try await fixture.delivery.begin(sessionID: held, target: nil)
+        fixture.delivery.accept(sessionID: held, itemID: "item-1", text: "保留した文")
+        await fixture.delivery.finish(sessionID: held)
+        let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertEqual(input.text, "保留した文")
+        XCTAssertFalse(input.allSegmentsPosted)
+        XCTAssertNil(input.target)
+    }
+
+    func testResumeInNewlyCapturedTargetNeverAllowsReplacement() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let session = UUID()
+        let first = SwitchableInputTarget(identifier: "test.first")
+        try await fixture.delivery.begin(sessionID: session, target: first)
+        let token = try XCTUnwrap(fixture.monitor.lastToken)
+        fixture.delivery.accept(sessionID: session, itemID: "item-1", text: "前半、")
+        await waitUntil { fixture.paster.calls.count == 1 && fixture.delivery.pendingText.isEmpty }
+
+        // 録音の途中で入力先が変わり、残りを保留する
+        first.rejection = "focus_changed"
+        fixture.delivery.accept(sessionID: session, itemID: "item-2", text: "後半。")
+        await waitUntil { fixture.delivery.isPaused && fixture.delivery.pendingText == "後半。" }
+        await fixture.delivery.finish(sessionID: session)
+        XCTAssertTrue(fixture.monitor.isClean(for: token), "保留しただけでは見張りは崩れない")
+
+        // 「3秒後に選択した欄で再開」で、新しい欄 (中身を読めない) に残りを入れる
+        let second = SwitchableInputTarget(identifier: "test.second")
+        fixture.capturedTarget.target = second
+        fixture.delivery.scheduleResume()
+        await waitUntil(timeout: .seconds(5)) {
+            fixture.paster.calls.count == 2 && fixture.delivery.pendingText.isEmpty
+                && fixture.delivery.lastDeliveredInput != nil
+        }
+        XCTAssertEqual(fixture.paster.calls.map(\.text), ["前半、", "後半。"])
+
+        let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertEqual(input.text, "前半、後半。")
+        XCTAssertEqual(input.target?.diagnosticAppIdentifier, "test.second")
+        // 新しい欄には後半しか入っていないので、全文を消させない
+        XCTAssertFalse(input.allSegmentsPosted)
+        XCTAssertEqual(fixture.monitor.invalidateCount, 1)
+        XCTAssertFalse(fixture.monitor.isClean(for: token))
+
+        // 訂正のホットキーで開いても、コピーだけになる
+        let schema = Schema([Transcription.self, WordReplacement.self])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let coordinator = HaasCorrectionCoordinator(
+            delivery: fixture.delivery, monitor: fixture.monitor, replacer: HaasSystemCorrectionReplacer(),
+            settings: HaasSettingsStore(defaults: fixture.defaults), modelContext: container.mainContext,
+            isIdle: { true }, captureReturnTarget: { nil }, waitForFocus: { _ in })
+        let draft = try XCTUnwrap(coordinator.begin())
+        XCTAssertEqual(draft.originalText, "前半、後半。")
+        XCTAssertEqual(draft.decision, .copyOnly(.notAllPosted))
+    }
+
     func testUnresolvedSessionsAreArchivedWithoutBlockingOrMixingNewInput() async throws {
         let fixture = try DeliveryFixture()
         defer { fixture.cleanUp() }
@@ -71,7 +282,8 @@ final class HaasInputDeliveryTests: XCTestCase {
 
         let reopened = HaasInputDelivery(
             store: HaasRecoveryStore(fileURL: fixture.fileURL, legacyDefaults: fixture.defaults),
-            textPaster: ControlledTextPaster()
+            textPaster: ControlledTextPaster(),
+            inputMonitor: FakeInputWatcher()
         )
         XCTAssertEqual(reopened.archivedRecoveries.first?.id, oldID)
         XCTAssertEqual(reopened.archivedRecoveries.first?.ledger.uncertainText, "確認が必要な旧文")
@@ -384,8 +596,10 @@ final class HaasInputDeliveryTests: XCTestCase {
         )
     }
 
-    private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+    private func waitUntil(
+        timeout: Duration = .seconds(1), _ condition: @escaping @MainActor () -> Bool
+    ) async {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
         while !condition(), ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(5))
         }
@@ -400,6 +614,9 @@ private final class DeliveryFixture {
     let defaults: UserDefaults
     let suite: String
     let paster = ControlledTextPaster()
+    let monitor = FakeInputWatcher()
+    /// 再開のときに取る入力先
+    let capturedTarget = CapturedTargetBox()
     let delivery: HaasInputDelivery
 
     init() throws {
@@ -408,7 +625,8 @@ private final class DeliveryFixture {
         suite = "HaasDeliveryTests.\(UUID().uuidString)"
         defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         delivery = HaasInputDelivery(
-            store: HaasRecoveryStore(fileURL: fileURL, legacyDefaults: defaults), textPaster: paster
+            store: HaasRecoveryStore(fileURL: fileURL, legacyDefaults: defaults), textPaster: paster,
+            inputMonitor: monitor, captureTarget: { [capturedTarget] in capturedTarget.target }
         )
     }
 
@@ -432,6 +650,58 @@ private final class DeliveryFixture {
 private struct AvailableInputTarget: HaasInputTargetChecking {
     let diagnosticAppIdentifier = "test.destination"
     func rejectionReason() -> String? { nil }
+}
+
+/// 中身を読める入力先。text はカーソルの前、after はカーソルの後ろ
+@MainActor
+private final class ReadableInputTarget: HaasInputTargetChecking {
+    let diagnosticAppIdentifier = "test.readable"
+    var text: String
+    var after: String
+    var selectionLength = 0
+    private(set) var reads = 0
+    init(text: String, after: String = "") {
+        self.text = text
+        self.after = after
+    }
+    func rejectionReason() -> String? { nil }
+    func fieldState() -> HaasFieldState {
+        reads += 1
+        return .readable(textBeforeCaret: text, textAfterCaret: after, selectionLength: selectionLength)
+    }
+}
+
+/// 置き換えとコピーを記録するだけの置き換え役 (入力先にもクリップボードにも触れない)
+@MainActor
+private final class RecordingCorrectionReplacer: HaasCorrectionReplacing {
+    private(set) var replaceCount = 0
+    private(set) var copies: [String] = []
+    func replace(
+        _ text: String, deleteCount: Int,
+        awaitField: @escaping @MainActor (_ deleted: Int) async -> Bool,
+        shouldContinue: @escaping @MainActor (_ deleted: Int) -> Bool,
+        pasteGuard: @escaping @MainActor (CursorPaster.PastePhase) -> Bool
+    ) async -> HaasReplaceOutcome {
+        replaceCount += 1
+        return .notStarted
+    }
+    func copy(_ text: String) -> Bool {
+        copies.append(text)
+        return true
+    }
+}
+
+@MainActor
+private final class SwitchableInputTarget: HaasInputTargetChecking {
+    let diagnosticAppIdentifier: String
+    var rejection: String?
+    init(identifier: String) { diagnosticAppIdentifier = identifier }
+    func rejectionReason() -> String? { rejection }
+}
+
+@MainActor
+private final class CapturedTargetBox {
+    var target: (any HaasInputTargetChecking)?
 }
 
 @MainActor
@@ -464,5 +734,23 @@ private final class ControlledTextPaster: HaasTextPasting {
     func complete(index: Int, result: CursorPaster.PasteResult) throws {
         let continuation = try XCTUnwrap(continuations.removeValue(forKey: index))
         continuation.resume(returning: CursorPaster.PasteOutcome(result: result))
+    }
+}
+
+@MainActor
+private final class FakeInputWatcher: HaasInputWatching {
+    private(set) var startCount = 0
+    private(set) var invalidateCount = 0
+    private(set) var lastToken: UUID?
+    func startWatching() -> UUID {
+        startCount += 1
+        let token = UUID()
+        lastToken = token
+        return token
+    }
+    func isClean(for token: UUID) -> Bool { token == lastToken }
+    func invalidate() {
+        invalidateCount += 1
+        lastToken = nil
     }
 }

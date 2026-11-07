@@ -61,6 +61,24 @@ struct HaasPasteTarget: HaasInputTargetChecking {
         return CFEqual(element, current.element) ? nil : "focus_changed"
     }
 
+    func fieldState() -> HaasFieldState {
+        AXUIElementSetMessagingTimeout(element, 0.10)
+        var value: CFTypeRef?
+        var range: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success,
+            let text = value as? String,
+            AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range) == .success,
+            let range, CFGetTypeID(range) == AXValueGetTypeID()
+        else { return .unreadable }
+        var selected = CFRange()
+        guard AXValueGetValue(range as! AXValue, .cfRange, &selected) else { return .unreadable }
+        return HaasFieldState.make(value: text, selectedRange: selected)
+    }
+
+    func activate() -> Bool {
+        NSRunningApplication(processIdentifier: processID)?.activate() ?? false
+    }
+
     private static func readTarget(
         diagnoseFailure: Bool, expectedPID: pid_t? = nil
     ) -> (target: HaasPasteTarget?, reason: String?) {
@@ -158,11 +176,50 @@ struct HaasPasteTarget: HaasInputTargetChecking {
     }
 }
 
+extension HaasFieldState {
+    /// AX の値と選択範囲 (UTF-16 の位置) から作る。範囲が値の外や、範囲の始まり・終わりが
+    /// Unicode スカラーの途中なら .unreadable
+    static func make(value: String, selectedRange: CFRange) -> HaasFieldState {
+        let units = value.utf16.count
+        guard selectedRange.location >= 0, selectedRange.length >= 0,
+            selectedRange.location <= units, selectedRange.length <= units - selectedRange.location
+        else { return .unreadable }
+        let caret = String.Index(utf16Offset: selectedRange.location, in: value)
+        let selectionEnd = String.Index(utf16Offset: selectedRange.location + selectedRange.length, in: value)
+        guard caret.samePosition(in: value.unicodeScalars) != nil,
+            selectionEnd.samePosition(in: value.unicodeScalars) != nil
+        else { return .unreadable }
+        return .readable(
+            textBeforeCaret: String(value[..<caret]), textAfterCaret: String(value[selectionEnd...]),
+            selectionLength: selectedRange.length)
+    }
+}
+
 enum HaasRecoveryCopyKind: Equatable { case pending, uncertain }
 
+/// 直前の録音1回分の入力。訂正の判定に使う
+struct HaasDeliveredInput {
+    let sessionID: UUID
+    let transcriptionID: UUID?
+    let text: String
+    /// 区切りがすべて posted で、かつ1つ以上ある。録音の途中で入力先を取り直した回は false
+    let allSegmentsPosted: Bool
+    let target: (any HaasInputTargetChecking)?
+    /// この録音の開始で始めた見張りの印 (別の回の印は返さない)
+    let watchToken: UUID?
+    /// この録音の最初の区切りを貼る直前の欄の状態。記録がなければ nil
+    let insertionBaseline: HaasInsertionBaseline?
+}
+
 @MainActor
-final class HaasInputDelivery: ObservableObject {
-    static let shared = HaasInputDelivery(store: HaasRecoveryStore(), textPaster: HaasSystemTextPaster())
+protocol HaasDeliveredInputProviding: AnyObject {
+    var lastDeliveredInput: HaasDeliveredInput? { get }
+}
+
+@MainActor
+final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
+    static let shared = HaasInputDelivery(
+        store: HaasRecoveryStore(), textPaster: HaasSystemTextPaster(), inputMonitor: HaasUserInputMonitor.shared)
 
     @Published private var state = HaasRecoveryState()
     @Published private(set) var message = ""
@@ -171,6 +228,16 @@ final class HaasInputDelivery: ObservableObject {
     @Published private(set) var resumeCountdown: Int?
     private let store: HaasRecoveryStore
     private let textPaster: any HaasTextPasting
+    private let inputMonitor: any HaasInputWatching
+    /// 録音の開始で始めた、入力後の操作の見張りの印
+    private(set) var watchToken: UUID?
+    /// watchToken を始めた録音。begin が失敗しても前回の印と記録の組が崩れないように持つ
+    private var watchSessionID: UUID?
+    /// 再開で入力先を取り直した録音。前の入力先に入れた分は今の入力先にないので、置き換えに使わせない
+    private var retargetedSessionID: UUID?
+    /// 録音の最初の区切りを貼る直前に読んだ欄の状態と、その録音
+    private var insertionBaseline: (sessionID: UUID, baseline: HaasInsertionBaseline)?
+    private let captureTarget: @MainActor () -> (any HaasInputTargetChecking)?
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "HaasInputDelivery")
     private var loadFailure: Error?
     private var persistenceFailure: Error?
@@ -192,14 +259,35 @@ final class HaasInputDelivery: ObservableObject {
     }
     var pendingText: String { ledger.pendingText }
     var uncertainText: String { ledger.uncertainText }
+
+    /// 直前の録音の入力。記録がない、録音中、開始の途中、貼り付け中は nil
+    var lastDeliveredInput: HaasDeliveredInput? {
+        guard let record = state.active, runningSessionID == nil, pendingBeginID == nil, drainTask == nil else {
+            return nil
+        }
+        let segments = record.ledger.segments
+        return HaasDeliveredInput(
+            sessionID: record.id, transcriptionID: record.transcriptionID, text: record.ledger.fullText,
+            allSegmentsPosted: !segments.isEmpty && segments.allSatisfy { $0.disposition == .posted }
+                && retargetedSessionID != record.id,
+            target: target, watchToken: watchSessionID == record.id ? watchToken : nil,
+            insertionBaseline: insertionBaseline?.sessionID == record.id ? insertionBaseline?.baseline : nil)
+    }
+
     private var nextReadySegment: HaasSegmentLedger.Segment? {
         guard let first = ledger.nextPendingSegment, formattingHolds[first.id] == nil else { return nil }
         return first
     }
 
-    init(store: HaasRecoveryStore, textPaster: any HaasTextPasting) {
+    init(
+        store: HaasRecoveryStore, textPaster: any HaasTextPasting,
+        inputMonitor: any HaasInputWatching = HaasUserInputMonitor.shared,
+        captureTarget: @escaping @MainActor () -> (any HaasInputTargetChecking)? = { HaasPasteTarget.capture() }
+    ) {
         self.store = store
         self.textPaster = textPaster
+        self.inputMonitor = inputMonitor
+        self.captureTarget = captureTarget
         do {
             let loaded = try store.load()
             state = loaded
@@ -256,6 +344,8 @@ final class HaasInputDelivery: ObservableObject {
         isPaused = target == nil
         message = target == nil ? "入力先を確認できません。認識結果は保留し、コピーできます。" : ""
         recoveryError = nil
+        watchToken = inputMonitor.startWatching()
+        watchSessionID = sessionID
         logger.notice("delivery phase=begin session=\(sessionID.uuidString, privacy: .public) archives=\(candidate.archives.count, privacy: .public)")
     }
 
@@ -342,10 +432,14 @@ final class HaasInputDelivery: ObservableObject {
                 self.pendingBeginID == nil, !Task.isCancelled
             else { return }
             self.resumeTask = nil
-            guard let target = HaasPasteTarget.capture() else {
+            guard let target = self.captureTarget() else {
                 self.message = "入力先を確認できませんでした。再開を予約して外部のテキスト欄を選ぶか、未入力分をコピーしてください。"
                 return
             }
+            // 入力先を取り直したので、この録音の入力はどれも置き換えに使わない。
+            // 自分の窓での操作や ⌘Tab は見張りで見えないことがあるため、見張りも信頼しない
+            self.retargetedSessionID = recordID
+            self.inputMonitor.invalidate()
             self.target = target
             self.isPaused = false
             self.message = ""
@@ -380,6 +474,11 @@ final class HaasInputDelivery: ObservableObject {
         var candidate = state
         candidate.active?.ledger.markPendingAsCopied()
         _ = save(candidate)
+    }
+
+    /// 入力の後の見張りを信頼しなくする。この配信を通さずに貼るとき (直前の認識結果の入力など) に呼ぶ
+    func invalidateInputWatch() {
+        inputMonitor.invalidate()
     }
 
     func acknowledgeUncertainInput() {
@@ -454,6 +553,19 @@ final class HaasInputDelivery: ObservableObject {
                 var posting = self.state
                 posting.active?.ledger.setDisposition(.posting, for: segment.id)
                 guard self.save(posting) else { break }
+                // 最初の区切りを貼る直前の欄を記録する。訂正では、この中身に入れた文を足したものと
+                // ちょうど一致するときだけ消す (末尾が同じだけでは今回入れた証明にならない)
+                if self.insertionBaseline?.sessionID != recordID {
+                    let baseline: HaasInsertionBaseline
+                    switch target.fieldState() {
+                    case let .readable(textBeforeCaret, textAfterCaret, selectionLength) where selectionLength == 0:
+                        baseline = .readable(textBeforeInsertion: textBeforeCaret, textAfterInsertion: textAfterCaret)
+                    case .readable, .unreadable:
+                        // 選択範囲があると貼り付けで消える文字があるので、読めなかったものとして扱う
+                        baseline = .unreadable
+                    }
+                    self.insertionBaseline = (recordID, baseline)
+                }
                 self.logger.notice("delivery phase=before-command session=\(recordID.uuidString, privacy: .public) segment=\(segment.id, privacy: .public) generation=\(drainGeneration.uuidString, privacy: .public) app=\(target.diagnosticAppIdentifier, privacy: .public)")
                 var guardFailure: String?
                 let outcome = await self.textPaster.paste(segment.text) { [weak self] in

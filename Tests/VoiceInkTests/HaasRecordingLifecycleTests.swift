@@ -379,6 +379,16 @@ final class HaasRecordingLifecycleTests: XCTestCase {
         return id
     }
 
+    func testPasteLastTranscriptionAlwaysInvalidatesInputWatch() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanUp() }
+        XCTAssertEqual(fixture.watcher.invalidateCount, 0)
+        // ショートカットを通さずに呼んでも、この貼り付けの後に直前の入力を置き換えさせない
+        fixture.engine.pasteLastTranscription()
+        XCTAssertEqual(fixture.watcher.invalidateCount, 1)
+        await waitUntil { fixture.engine.errorMessage != nil }
+    }
+
     private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async {
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while !condition(), ContinuousClock.now < deadline {
@@ -396,6 +406,7 @@ private final class EngineFixture {
     let suite: String
     let container: ModelContainer
     let audio = ControlledAudioRecorder()
+    let watcher = LifecycleFakeInputWatcher()
     let delivery: HaasInputDelivery
     var sessions: [ControlledRecordingSession] = []
     var configureSession: ((ControlledRecordingSession) -> Void)?
@@ -431,7 +442,8 @@ private final class EngineFixture {
         container = try ModelContainer(for: schema, configurations: configuration)
         usageRecorder = recordsUsage ? HaasUsageRecorder(container: container) : nil
         delivery = HaasInputDelivery(
-            store: HaasRecoveryStore(fileURL: recoveryURL, legacyDefaults: defaults), textPaster: NoInputPaster()
+            store: HaasRecoveryStore(fileURL: recoveryURL, legacyDefaults: defaults), textPaster: NoInputPaster(),
+            inputMonitor: watcher
         )
         let persistent = UserDefaults.standard.persistentDomain(forName: "com.tatsumi.VoiceInkHaas.TestsHost") ?? [:]
         let keys = [HaasPunctuationMode.settingsKey, CleanupSettingsKeys.isTranscriptionCleanupEnabled,
@@ -591,4 +603,12 @@ private struct NoInputPaster: HaasTextPasting {
         .init(result: .commandNotPosted)
     }
     func copy(_ text: String) -> Bool { false }
+}
+
+@MainActor
+private final class LifecycleFakeInputWatcher: HaasInputWatching {
+    private(set) var invalidateCount = 0
+    func startWatching() -> UUID { UUID() }
+    func isClean(for token: UUID) -> Bool { false }
+    func invalidate() { invalidateCount += 1 }
 }

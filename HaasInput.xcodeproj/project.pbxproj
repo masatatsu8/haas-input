@@ -18,6 +18,7 @@
 		0AEED7624D35A7C2EE2BFBD1 /* AudioDeviceManager+RecordingRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C47DE67B9F0A5780D97E14E /* AudioDeviceManager+RecordingRouting.swift */; };
 		0BDAF9E9D8638B10B5113922 /* WordReplacementVariants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94D801E6402277E98DC3DB2B /* WordReplacementVariants.swift */; };
 		0BEB773A15B4BAFB436B7E06 /* CustomSoundSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E8BB1CC38E17F65DA65EE2 /* CustomSoundSettingsView.swift */; };
+		0D5B03BC3A733F53758CE3A9 /* HaasFieldStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C409CCCB7185C642A448D7 /* HaasFieldStateTests.swift */; };
 		0DE2052242C0AB01E04A7C6B /* MediaController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19B3045F0E3FA9A867095B3A /* MediaController.swift */; };
 		0DE6D0F80390C775AE377FC2 /* HaasRecoveryHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5B4497354353C6343E46921 /* HaasRecoveryHistoryView.swift */; };
 		0E44446756C333781E8143BF /* HaasUsageRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72CEFD54F3ADE84F37866EE3 /* HaasUsageRecorder.swift */; };
@@ -38,6 +39,7 @@
 		1571DF48A188A4C5BA143583 /* HaasPendingInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEA342AB91F55FFE695B8A00 /* HaasPendingInputView.swift */; };
 		15DA0B340285717405BCD388 /* HaasPTTRecordingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B97D90AE7E1C3C93CE8231 /* HaasPTTRecordingTests.swift */; };
 		16466264CEAEB2341FD2E88D /* UserSessionInputPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49188D313C5797CADC3C8CFF /* UserSessionInputPolicy.swift */; };
+		1702F0FBED615D5FD2D75EC9 /* HaasCorrectionCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1804138F0A2D17AA96F3919E /* HaasCorrectionCoordinatorTests.swift */; };
 		1966FE8CAE13D4889D28175E /* HaasInputDeliveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 174526B88CEDD0D03E9AFBE7 /* HaasInputDeliveryTests.swift */; };
 		1A0AA1B1A6CE5411572EF1CD /* CoreAudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D969EB792C773CC5D8357E73 /* CoreAudioRecorder.swift */; };
 		1ACD2686DC8699B23E8BEF0F /* AudioInputChannelSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25C1853918ACF6B67B37181 /* AudioInputChannelSelection.swift */; };
@@ -50,12 +52,14 @@
 		1F96AE7A2D742D49BD992DD7 /* LaunchAtLoginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EC5F6460C68893D248C2FC0 /* LaunchAtLoginManager.swift */; };
 		20063199563643F254B4EEE9 /* AudioInputFailurePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D5B36FB08D40563EC03AC59 /* AudioInputFailurePresentation.swift */; };
 		21102154A2768F19B48FCEA3 /* HaasHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4EA8A0DDEF48AFE63512980 /* HaasHistoryView.swift */; };
+		24ADDB564215AF4608451C16 /* HaasCorrectionSuggester.swift in Sources */ = {isa = PBXBuildFile; fileRef = 205BA2C0ED5359D96013909D /* HaasCorrectionSuggester.swift */; };
 		253954275BAB834158ACBE2A /* HaasHistoryCSV.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AD4FC35113689FBCFA3B652 /* HaasHistoryCSV.swift */; };
 		262817EA67D3F363E78C5D9D /* WordReplacementService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7319258E5E7F1C53CF94EB58 /* WordReplacementService.swift */; };
 		2681A85B6EEBA601612A5DE4 /* AppNotificationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2518E874C6AB20755EE871D /* AppNotificationView.swift */; };
 		26994B4F98DA52DD745A9181 /* CursorPaster.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7841AA5826AFCF8E7ECCCA1 /* CursorPaster.swift */; };
 		26F9A53EA7E228530DE0413F /* sound5.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 46FD9BA8A8DA5BF547CC1366 /* sound5.mp3 */; };
 		274766775C59AD6FC0406B8E /* HaasWordReplacementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA4A246092E5D5B909860753 /* HaasWordReplacementStore.swift */; };
+		2864C2E2F9C5A6B7B9EA736A /* HaasCorrectionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B670713C6BF03AF9489614 /* HaasCorrectionCoordinator.swift */; };
 		28E9A20548459BF80747C618 /* MediaRemoteAdapter-Notices.txt in Resources */ = {isa = PBXBuildFile; fileRef = CB435C8069F26950FBB43CB5 /* MediaRemoteAdapter-Notices.txt */; };
 		2AA9B53B2D7120CF3B1FCB50 /* UserDefaultsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138FDA68F21CF0FCF6986461 /* UserDefaultsManager.swift */; };
 		2B148A516BF4CC4F80459144 /* ClamshellStateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDCC9B7EC02CA0F0D6A7C51 /* ClamshellStateMonitor.swift */; };
@@ -85,6 +89,7 @@
 		3D59E1ECF0F58062CA90998C /* HaasHistoryMaintenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66CCBAD54586A43D3C1263CA /* HaasHistoryMaintenance.swift */; };
 		3D9AEA4B9F0F7E3F28086954 /* SessionMetric.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82033D1AA830573224507930 /* SessionMetric.swift */; };
 		3ED610A3DE33DD6AF2A4A3C4 /* HaasHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AA4C29D7C53C2FCB4EC953F /* HaasHomeView.swift */; };
+		3FFD397CC7B7E427AF88C6AC /* HaasReplacementDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24578DB838FE63ED12A99B2D /* HaasReplacementDecision.swift */; };
 		4061DA67E9EF2611E3863B4D /* Recorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DF285B8ED976FFF3AEA7400 /* Recorder.swift */; };
 		41459D1FB600118D327BBBF1 /* sound5.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 46FD9BA8A8DA5BF547CC1366 /* sound5.mp3 */; };
 		42245C9147E2D87BBFD4B5BD /* ShortcutAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = F707533308286D8F58D8708B /* ShortcutAction.swift */; };
@@ -129,6 +134,7 @@
 		6624C68F610DEB2F47B9EC56 /* WordReplacementServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D88BDC8B19209384117F873C /* WordReplacementServiceTests.swift */; };
 		66442B9A47CDB16833C28012 /* HaasRealtimeTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = C56F4BA767B143817F01C23F /* HaasRealtimeTranscript.swift */; };
 		672A1D6EF277FD03519C5644 /* HaasUsageStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69D2F75FC8A8219BA1F2E04B /* HaasUsageStatistics.swift */; };
+		68D5A5E9FC7CA5085CB60D97 /* HaasCorrectionSuggester.swift in Sources */ = {isa = PBXBuildFile; fileRef = 205BA2C0ED5359D96013909D /* HaasCorrectionSuggester.swift */; };
 		68F54706D55C2A5C23725CAA /* ShortcutEventTapThread.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32719006A6C4606C80C3CD50 /* ShortcutEventTapThread.swift */; };
 		694C5151A9B09BD6FE12E68B /* StoragePreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4E6DC93A7683B85BBF18F6C /* StoragePreferences.swift */; };
 		696429A041A031D5B0CC1872 /* HaasRecoveryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D120E068899FFDAF391C43DC /* HaasRecoveryStore.swift */; };
@@ -149,6 +155,8 @@
 		7ACAC157F74089ECFA35BED0 /* HaasVocabularyEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DCE7FB53BB181FDEF2D1D1E /* HaasVocabularyEntry.swift */; };
 		7E064BE53BA08514FD34AB38 /* sound1.wav in Resources */ = {isa = PBXBuildFile; fileRef = 1DFD670ACFAD0A11C279C103 /* sound1.wav */; };
 		7E56AC88EEACDFF9FC72184B /* HaasErrorPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE57668F0E630BE5C7AC229 /* HaasErrorPresentation.swift */; };
+		7EE51F51942B0C22F735E1C8 /* HaasCorrectionSuggesterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C20FCBD32F5933C91876B08 /* HaasCorrectionSuggesterTests.swift */; };
+		7EFE4D57C36465C500FB915C /* HaasUserInputMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88AFAA9F24D6F5F5C53A2808 /* HaasUserInputMonitor.swift */; };
 		7FE6E69F7E2B93F3E990877C /* HaasJapaneseReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC171B28744DFF850DE5A3F6 /* HaasJapaneseReading.swift */; };
 		83C0995C6D10C70C9B8FC986 /* HaasPCMConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE62DD697350EED58C0203B /* HaasPCMConverter.swift */; };
 		8422003B39C88AD0AE2458F5 /* HaasUsageRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72CEFD54F3ADE84F37866EE3 /* HaasUsageRecorder.swift */; };
@@ -168,7 +176,9 @@
 		9341F22CE138EAD39D53915D /* HaasSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4CCE8B79BD94C7388A7916D /* HaasSettingsView.swift */; };
 		943B2B32D1B1B3BB53158016 /* ShortcutEventTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F15889EC38DBA04A3EE6D5 /* ShortcutEventTap.swift */; };
 		95C6DC891AD62FFAA3F291E2 /* HaasModelDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B00A6D0385B605941F72EC6 /* HaasModelDownloader.swift */; };
+		988830D89D623EB02064E8B3 /* HaasCorrectionPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF8762765389B25FFF9605FB /* HaasCorrectionPanel.swift */; };
 		99E0F77A8E14B7191780A386 /* HaasVocabularyTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CCC4BE1C37788FF1C78486E /* HaasVocabularyTable.swift */; };
+		9A099ABBE407A0EE18964CA9 /* HaasReplacementDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24578DB838FE63ED12A99B2D /* HaasReplacementDecision.swift */; };
 		9B2B64DD80286663DF6ED987 /* sound4.wav in Resources */ = {isa = PBXBuildFile; fileRef = 22E546B1567FA31ACAC067AA /* sound4.wav */; };
 		9C32257B1394B38694AC9034 /* HaasUsageStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69D2F75FC8A8219BA1F2E04B /* HaasUsageStatistics.swift */; };
 		9C439D69E64897C1102EC401 /* HaasInputTestHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AF8E1CC53EBB0CC492116D9 /* HaasInputTestHostApp.swift */; };
@@ -181,6 +191,7 @@
 		A3DE74FACE5A6B8FF2123A93 /* HaasUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B8DD14A12D751A623898550 /* HaasUsageView.swift */; };
 		A427BC7BFFB2228C005550FA /* HaasJapaneseReadingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7891B7D06C3FE7FB24A9E0DB /* HaasJapaneseReadingTests.swift */; };
 		A468387D82111555B1842BDF /* sound2.wav in Resources */ = {isa = PBXBuildFile; fileRef = 0A77F5A0ADCDD5FA44807E26 /* sound2.wav */; };
+		A49071A2B48B236EF9DDAA95 /* HaasInputWatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEB158BDE28CF4A527585FE3 /* HaasInputWatchTests.swift */; };
 		A5ADD32292B1C24F602DD52C /* HaasRealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF1C53E10FF49537D0A9B41 /* HaasRealtimeClient.swift */; };
 		A5CF70A13258F7729826A84A /* HaasVocabularyImportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92FFAE414DD87B11CC09B83E /* HaasVocabularyImportSheet.swift */; };
 		A6828CAD3DEDDFB9AE7CBCAC /* WordReplacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FAE9FCE1474D9CB583D0D2 /* WordReplacement.swift */; };
@@ -195,12 +206,15 @@
 		AAC3F2F985C09DEEAF7A9D86 /* ClipboardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6282B7F34242528A912E2155 /* ClipboardManager.swift */; };
 		AB45D3AC4A82F46862A3E295 /* RecordingShortcutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6137BB0B5AA89F13F5DEA39B /* RecordingShortcutManager.swift */; };
 		ADA3DBB9B64379CC55191940 /* HaasSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64F68AF12D120E819F86EA8F /* HaasSettingsStore.swift */; };
+		AE0C4C34182A51124DDAC96A /* HaasCorrectionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B670713C6BF03AF9489614 /* HaasCorrectionCoordinator.swift */; };
 		AE85ECD36733FA0B689AAAD1 /* AppNotificationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2518E874C6AB20755EE871D /* AppNotificationView.swift */; };
 		B003416A5490874B714B673E /* HaasMenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E46C0B4879D804569B2B6E /* HaasMenuBarView.swift */; };
 		B1567D97351119638E9FB362 /* AppStorageIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1715638023F1FB22206ED0A4 /* AppStorageIdentity.swift */; };
+		B47C1E96BA8F561C9E311E9A /* HaasCorrectionPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF8762765389B25FFF9605FB /* HaasCorrectionPanel.swift */; };
 		B51AB361E4BDCFB666074633 /* AudioInputChannelSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25C1853918ACF6B67B37181 /* AudioInputChannelSelection.swift */; };
 		B5706DCC88C151C5E023E158 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = 62489E441276F76B99811094 /* MediaRemoteAdapter */; };
 		B6085002355505A848D05F37 /* HaasProofreadValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D3DBBAD3F5C6BD04E34B418 /* HaasProofreadValidatorTests.swift */; };
+		B6C6CD0BA99BF38F0C814831 /* HaasCorrectionAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70439732DE8058B8FAABAB23 /* HaasCorrectionAdapters.swift */; };
 		B733071E9B50B9EA9C5DB43D /* RecorderScreenResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B4C956D6CB8714452E4533 /* RecorderScreenResolver.swift */; };
 		B838F36C021F8B768FB61D7C /* HaasModelAssetFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02F434F76626482D43557F7F /* HaasModelAssetFixture.swift */; };
 		B885941078B9C4D7A85293F7 /* HaasPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 708ECAB1E987855FD53F5709 /* HaasPersistence.swift */; };
@@ -211,6 +225,7 @@
 		BD460F1B9266517A25765663 /* HaasRecoveryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D120E068899FFDAF391C43DC /* HaasRecoveryStore.swift */; };
 		BE04959CF1704E2094989B90 /* HaasAboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6781B78DB223CE8432C2F9BA /* HaasAboutView.swift */; };
 		C136F34E164F5BC4EBD1EF57 /* HaasSpeechServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4591CB71BF024382B69D32 /* HaasSpeechServer.swift */; };
+		C21C57C8AF3D203B6E7D7102 /* HaasUserInputMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88AFAA9F24D6F5F5C53A2808 /* HaasUserInputMonitor.swift */; };
 		C2273AA053DF340F70380E58 /* SoundPlaybackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EB14632D6747FABBFD48E33 /* SoundPlaybackEngine.swift */; };
 		C2FC5DE5ADDA2889D7994A5D /* PlaybackController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 323534ACDD7A73FD4EE2742D /* PlaybackController.swift */; };
 		C35013589876E24082DCDE74 /* HaasModelPreparationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF28D24BAE1CC53067229CD /* HaasModelPreparationTests.swift */; };
@@ -236,6 +251,7 @@
 		D1B5035CF492C50FAA8DFC32 /* HaasModelPreparation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D291ED04BC2AC24A582D01A /* HaasModelPreparation.swift */; };
 		D2EB4669C37D76EDD2FE5F03 /* HaasPermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B111E3C60CDCBFBA21745CF5 /* HaasPermissions.swift */; };
 		D39E4410E93FB887C85FA4B1 /* ShortcutValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3889E300C0B835F300D37E3 /* ShortcutValidator.swift */; };
+		D413F25E91EAF6EBFE3E3C1F /* HaasCorrectionPanelModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5704D2EA66BF3933E4FF893 /* HaasCorrectionPanelModelTests.swift */; };
 		D5144DF97186C04DA7DA43C2 /* HaasHistoryAudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A700301D0941C15197CC40F6 /* HaasHistoryAudioPlayer.swift */; };
 		D543CB269D6237C93F5263BC /* HaasSettingsStore+Runtime.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FB62EAC3F3537577E49C50 /* HaasSettingsStore+Runtime.swift */; };
 		D581A9C81054F51FB8F5C48C /* HaasInputDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D88E0AA03AD2DC5811E2F83 /* HaasInputDelivery.swift */; };
@@ -253,6 +269,7 @@
 		E00962888DB9B7BF9F890AD3 /* Recorder+RecordingDeviceSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABDF179DB0C70E1BE5FA753B /* Recorder+RecordingDeviceSetup.swift */; };
 		E0BC715753B9281CA738C443 /* HaasRecoveryState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D70FCBECB1406A87E7FB76B /* HaasRecoveryState.swift */; };
 		E1016FD33DFBC7D57365ECBD /* AudioDeviceConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D5B4BCE8CF694605CE2731 /* AudioDeviceConfiguration.swift */; };
+		E1343645BE42E0662EDA137F /* HaasReplacementDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DA0CE825AF6797734EAACC5 /* HaasReplacementDecisionTests.swift */; };
 		E2790FF8D1A584C88337E243 /* HaasRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01AFA4705695D0F0BCE52AE3 /* HaasRootView.swift */; };
 		E2C86281FBD381EB48BBB43C /* HaasRecorderPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93D29950AB3B311E9CE4238 /* HaasRecorderPresentation.swift */; };
 		E43A26311D95BE8E32271DFA /* HaasPendingInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEA342AB91F55FFE695B8A00 /* HaasPendingInputView.swift */; };
@@ -278,11 +295,13 @@
 		F52FA7838BDC4DC474262692 /* ShortcutPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D607C2C3FE7D23001F275E2F /* ShortcutPreviewView.swift */; };
 		F6D4E7ECDEF52DE0F2C41FD5 /* sound7.wav in Resources */ = {isa = PBXBuildFile; fileRef = 6B8D6794B9157BA1958B7300 /* sound7.wav */; };
 		F722022B045189C34B1989DE /* AudioSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19A67C6420389E260F3F66AB /* AudioSetupView.swift */; };
+		F7D94F165C9991B72CD9BE8C /* CursorPasterReplacementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D0E3AEF278D3A363D35E897 /* CursorPasterReplacementTests.swift */; };
 		F882BE38C4D1F9D3030768CC /* HaasUsageWording.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD89DF6A78252D6A636AB8D /* HaasUsageWording.swift */; };
 		FA5E96B89632499EE3EDFBF5 /* HaasRecordingLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0AFA0F2DF2E379A2AB73AEC /* HaasRecordingLifecycleTests.swift */; };
 		FB989C1AB101AF334452B6F0 /* HaasSessionTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA002A70634D247A918F9BAE /* HaasSessionTranscript.swift */; };
 		FC5513FA4498326C70D2DD8C /* HaasUsageStatisticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE60B6FE73393F2DA195919F /* HaasUsageStatisticsTests.swift */; };
 		FC9934B617A9E2642EA3720C /* AudioSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19A67C6420389E260F3F66AB /* AudioSetupView.swift */; };
+		FCE3A30D4E3227D44168B86F /* HaasCorrectionAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70439732DE8058B8FAABAB23 /* HaasCorrectionAdapters.swift */; };
 		FE164BFBF5E4EA6B8B6CB16C /* HaasWordReplacementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272BA3FBCFD31078A937973D /* HaasWordReplacementView.swift */; };
 /* End PBXBuildFile section */
 
@@ -337,14 +356,18 @@
 		1669B96CD439EE39470DF536 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceManager.swift; sourceTree = "<group>"; };
 		1715638023F1FB22206ED0A4 /* AppStorageIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStorageIdentity.swift; sourceTree = "<group>"; };
 		174526B88CEDD0D03E9AFBE7 /* HaasInputDeliveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasInputDeliveryTests.swift; sourceTree = "<group>"; };
+		1804138F0A2D17AA96F3919E /* HaasCorrectionCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasCorrectionCoordinatorTests.swift; sourceTree = "<group>"; };
 		19A67C6420389E260F3F66AB /* AudioSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSetupView.swift; sourceTree = "<group>"; };
 		19B3045F0E3FA9A867095B3A /* MediaController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaController.swift; sourceTree = "<group>"; };
 		1C47DE67B9F0A5780D97E14E /* AudioDeviceManager+RecordingRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioDeviceManager+RecordingRouting.swift"; sourceTree = "<group>"; };
+		1D0E3AEF278D3A363D35E897 /* CursorPasterReplacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorPasterReplacementTests.swift; sourceTree = "<group>"; };
 		1D88E0AA03AD2DC5811E2F83 /* HaasInputDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasInputDelivery.swift; sourceTree = "<group>"; };
 		1DFD670ACFAD0A11C279C103 /* sound1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = sound1.wav; sourceTree = "<group>"; };
 		1EC5F6460C68893D248C2FC0 /* LaunchAtLoginManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginManager.swift; sourceTree = "<group>"; };
+		205BA2C0ED5359D96013909D /* HaasCorrectionSuggester.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasCorrectionSuggester.swift; sourceTree = "<group>"; };
 		211C72D7963DB71DA7C89640 /* HaasTextPasting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasTextPasting.swift; sourceTree = "<group>"; };
 		22E546B1567FA31ACAC067AA /* sound4.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = sound4.wav; sourceTree = "<group>"; };
+		24578DB838FE63ED12A99B2D /* HaasReplacementDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasReplacementDecision.swift; sourceTree = "<group>"; };
 		272BA3FBCFD31078A937973D /* HaasWordReplacementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasWordReplacementView.swift; sourceTree = "<group>"; };
 		2AF8E1CC53EBB0CC492116D9 /* HaasInputTestHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasInputTestHostApp.swift; sourceTree = "<group>"; };
 		2CCC4BE1C37788FF1C78486E /* HaasVocabularyTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasVocabularyTable.swift; sourceTree = "<group>"; };
@@ -397,14 +420,17 @@
 		6A43ECD840FFFB1D8CD9DAD0 /* HaasApplicationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasApplicationDelegate.swift; sourceTree = "<group>"; };
 		6B8D6794B9157BA1958B7300 /* sound7.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = sound7.wav; sourceTree = "<group>"; };
 		6BE62DD697350EED58C0203B /* HaasPCMConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasPCMConverter.swift; sourceTree = "<group>"; };
+		6C20FCBD32F5933C91876B08 /* HaasCorrectionSuggesterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasCorrectionSuggesterTests.swift; sourceTree = "<group>"; };
 		6F25B182A7C64B0EC4582C97 /* HaasRuntimeConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasRuntimeConfiguration.swift; sourceTree = "<group>"; };
 		6F28D827A11E275AA6B6BB9C /* ShortcutMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutMigration.swift; sourceTree = "<group>"; };
+		70439732DE8058B8FAABAB23 /* HaasCorrectionAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasCorrectionAdapters.swift; sourceTree = "<group>"; };
 		708ECAB1E987855FD53F5709 /* HaasPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasPersistence.swift; sourceTree = "<group>"; };
 		71DE770EE321BE66DFEEC5BC /* FoundationModels.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FoundationModels.framework; path = System/Library/Frameworks/FoundationModels.framework; sourceTree = SDKROOT; };
 		72CEFD54F3ADE84F37866EE3 /* HaasUsageRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasUsageRecorder.swift; sourceTree = "<group>"; };
 		7319258E5E7F1C53CF94EB58 /* WordReplacementService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordReplacementService.swift; sourceTree = "<group>"; };
 		75E8BB1CC38E17F65DA65EE2 /* CustomSoundSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomSoundSettingsView.swift; sourceTree = "<group>"; };
 		7891B7D06C3FE7FB24A9E0DB /* HaasJapaneseReadingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasJapaneseReadingTests.swift; sourceTree = "<group>"; };
+		7DA0CE825AF6797734EAACC5 /* HaasReplacementDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasReplacementDecisionTests.swift; sourceTree = "<group>"; };
 		7DD6C23152B24A355B1AD221 /* HaasPunctuationFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasPunctuationFormatter.swift; sourceTree = "<group>"; };
 		7DF285B8ED976FFF3AEA7400 /* Recorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder.swift; sourceTree = "<group>"; };
 		7EA2488583088673D68DE82E /* HaasModelAssets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasModelAssets.swift; sourceTree = "<group>"; };
@@ -412,6 +438,7 @@
 		7FAD7A0285E9DC512F143D28 /* HaasAppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasAppConfiguration.swift; sourceTree = "<group>"; };
 		82033D1AA830573224507930 /* SessionMetric.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMetric.swift; sourceTree = "<group>"; };
 		836F474266D2DEF23A11A7A2 /* HaasVocabularyEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasVocabularyEditor.swift; sourceTree = "<group>"; };
+		88AFAA9F24D6F5F5C53A2808 /* HaasUserInputMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasUserInputMonitor.swift; sourceTree = "<group>"; };
 		92FFAE414DD87B11CC09B83E /* HaasVocabularyImportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasVocabularyImportSheet.swift; sourceTree = "<group>"; };
 		931C8061E464D9425B6A7D4D /* HaasSegmentLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasSegmentLedger.swift; sourceTree = "<group>"; };
 		944BA3661F4A92392272AC9E /* HaasVocabularyMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasVocabularyMatcher.swift; sourceTree = "<group>"; };
@@ -437,11 +464,14 @@
 		ADDA59CBF8D33CE1BE3CF471 /* HaasRecorderSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasRecorderSurface.swift; sourceTree = "<group>"; };
 		B111E3C60CDCBFBA21745CF5 /* HaasPermissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasPermissions.swift; sourceTree = "<group>"; };
 		B2BB72A39394EC3DADC49A7F /* HaasTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasTransportTests.swift; sourceTree = "<group>"; };
+		B3B670713C6BF03AF9489614 /* HaasCorrectionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasCorrectionCoordinator.swift; sourceTree = "<group>"; };
+		B5704D2EA66BF3933E4FF893 /* HaasCorrectionPanelModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasCorrectionPanelModelTests.swift; sourceTree = "<group>"; };
 		B6F7E2CF924C81E606403B97 /* AudioInputChannelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioInputChannelsView.swift; sourceTree = "<group>"; };
 		B95E73F5F10DE4099470532E /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		BA7BA02DD99D2ACD7E4FECAD /* HaasPunctuationMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasPunctuationMode.swift; sourceTree = "<group>"; };
 		BA9C7291D097D579F10DE780 /* HaasSharedContextMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasSharedContextMutationTests.swift; sourceTree = "<group>"; };
 		BC523E0C12580B887B6DD167 /* Fixtures */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fixtures; path = Tests/VoiceInkTests/Fixtures; sourceTree = SOURCE_ROOT; };
+		BEB158BDE28CF4A527585FE3 /* HaasInputWatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasInputWatchTests.swift; sourceTree = "<group>"; };
 		C2518E874C6AB20755EE871D /* AppNotificationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNotificationView.swift; sourceTree = "<group>"; };
 		C3FB62EAC3F3537577E49C50 /* HaasSettingsStore+Runtime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HaasSettingsStore+Runtime.swift"; sourceTree = "<group>"; };
 		C4CCE8B79BD94C7388A7916D /* HaasSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasSettingsView.swift; sourceTree = "<group>"; };
@@ -472,9 +502,11 @@
 		EC385987D7A91C2266F1BF16 /* HaasVocabularyArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasVocabularyArchive.swift; sourceTree = "<group>"; };
 		F0AFA0F2DF2E379A2AB73AEC /* HaasRecordingLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasRecordingLifecycleTests.swift; sourceTree = "<group>"; };
 		F3A2DE83A441FFA29A954E11 /* ShortcutMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutMonitor.swift; sourceTree = "<group>"; };
+		F5C409CCCB7185C642A448D7 /* HaasFieldStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasFieldStateTests.swift; sourceTree = "<group>"; };
 		F707533308286D8F58D8708B /* ShortcutAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutAction.swift; sourceTree = "<group>"; };
 		FA4A246092E5D5B909860753 /* HaasWordReplacementStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasWordReplacementStore.swift; sourceTree = "<group>"; };
 		FE60B6FE73393F2DA195919F /* HaasUsageStatisticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasUsageStatisticsTests.swift; sourceTree = "<group>"; };
+		FF8762765389B25FFF9605FB /* HaasCorrectionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasCorrectionPanel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -610,6 +642,7 @@
 			children = (
 				C379D4B2CFF1A77DF6A10884 /* App */,
 				A5ACB25F813903BE541510FF /* Audio */,
+				FDDAA4DAAF23EE5B4AF81AA1 /* Correction */,
 				16D9AC03AD76F5672800BB71 /* Dictionary */,
 				B3F7041C93065BC19D586F1D /* History */,
 				A6AD1AEA6A4E7A43F02F89CA /* Input */,
@@ -703,10 +736,16 @@
 			children = (
 				642E6FA4AB5899FF14837C94 /* CleanupDefaultsMigrationTests.swift */,
 				2E976D7F222A4FC74EFF6A6A /* CursorPasterClipboardTests.swift */,
+				1D0E3AEF278D3A363D35E897 /* CursorPasterReplacementTests.swift */,
 				BC523E0C12580B887B6DD167 /* Fixtures */,
+				1804138F0A2D17AA96F3919E /* HaasCorrectionCoordinatorTests.swift */,
+				B5704D2EA66BF3933E4FF893 /* HaasCorrectionPanelModelTests.swift */,
+				6C20FCBD32F5933C91876B08 /* HaasCorrectionSuggesterTests.swift */,
 				53A761276000597567255A3E /* HaasDeliveryTests.swift */,
+				F5C409CCCB7185C642A448D7 /* HaasFieldStateTests.swift */,
 				35C4A3232B7D15232389323C /* HaasHistoryPresentationTests.swift */,
 				174526B88CEDD0D03E9AFBE7 /* HaasInputDeliveryTests.swift */,
+				BEB158BDE28CF4A527585FE3 /* HaasInputWatchTests.swift */,
 				7891B7D06C3FE7FB24A9E0DB /* HaasJapaneseReadingTests.swift */,
 				02F434F76626482D43557F7F /* HaasModelAssetFixture.swift */,
 				E19119F3925C9D93D9134132 /* HaasModelDownloadTests.swift */,
@@ -718,6 +757,7 @@
 				480210AB387CF6FBC33E3F96 /* HaasPunctuationWorkerTests.swift */,
 				F0AFA0F2DF2E379A2AB73AEC /* HaasRecordingLifecycleTests.swift */,
 				0854DB61F01B99F398C9DC85 /* HaasRecoveryStoreTests.swift */,
+				7DA0CE825AF6797734EAACC5 /* HaasReplacementDecisionTests.swift */,
 				438E9E78CAC1E1C5EB2C0E4D /* HaasSessionTranscriptTests.swift */,
 				2F366D40370286C37338B346 /* HaasSettingsStoreTests.swift */,
 				BA9C7291D097D579F10DE780 /* HaasSharedContextMutationTests.swift */,
@@ -890,6 +930,19 @@
 				37FAE9FCE1474D9CB583D0D2 /* WordReplacement.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		FDDAA4DAAF23EE5B4AF81AA1 /* Correction */ = {
+			isa = PBXGroup;
+			children = (
+				70439732DE8058B8FAABAB23 /* HaasCorrectionAdapters.swift */,
+				B3B670713C6BF03AF9489614 /* HaasCorrectionCoordinator.swift */,
+				FF8762765389B25FFF9605FB /* HaasCorrectionPanel.swift */,
+				205BA2C0ED5359D96013909D /* HaasCorrectionSuggester.swift */,
+				24578DB838FE63ED12A99B2D /* HaasReplacementDecision.swift */,
+				88AFAA9F24D6F5F5C53A2808 /* HaasUserInputMonitor.swift */,
+			);
+			path = Correction;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1072,6 +1125,10 @@
 				1BCD0C67A548FE20AA1552C8 /* HaasAppModel.swift in Sources */,
 				A6A2EFD1AA93B3F038693240 /* HaasApplePunctuationGenerator.swift in Sources */,
 				095779A590AFF696043A6F49 /* HaasApplicationDelegate.swift in Sources */,
+				FCE3A30D4E3227D44168B86F /* HaasCorrectionAdapters.swift in Sources */,
+				2864C2E2F9C5A6B7B9EA736A /* HaasCorrectionCoordinator.swift in Sources */,
+				B47C1E96BA8F561C9E311E9A /* HaasCorrectionPanel.swift in Sources */,
+				68D5A5E9FC7CA5085CB60D97 /* HaasCorrectionSuggester.swift in Sources */,
 				632EA0268B42C5E3DC3046A2 /* HaasDictationSession.swift in Sources */,
 				3D0A51E78D33C7309CF82C4C /* HaasDictionaryView.swift in Sources */,
 				D0311E3B38D2391B8F1CD64D /* HaasEngine.swift in Sources */,
@@ -1107,6 +1164,7 @@
 				0DE6D0F80390C775AE377FC2 /* HaasRecoveryHistoryView.swift in Sources */,
 				E0BC715753B9281CA738C443 /* HaasRecoveryState.swift in Sources */,
 				BD460F1B9266517A25765663 /* HaasRecoveryStore.swift in Sources */,
+				3FFD397CC7B7E427AF88C6AC /* HaasReplacementDecision.swift in Sources */,
 				E2790FF8D1A584C88337E243 /* HaasRootView.swift in Sources */,
 				5FF22AEAE95137DA528562DC /* HaasRuntimeConfiguration.swift in Sources */,
 				F3F1A5031AD008F12B56DC2D /* HaasSegmentLedger.swift in Sources */,
@@ -1120,6 +1178,7 @@
 				9C32257B1394B38694AC9034 /* HaasUsageStatistics.swift in Sources */,
 				5CFEC5F5E8A27A65E455AD5B /* HaasUsageView.swift in Sources */,
 				F882BE38C4D1F9D3030768CC /* HaasUsageWording.swift in Sources */,
+				7EFE4D57C36465C500FB915C /* HaasUserInputMonitor.swift in Sources */,
 				2BF27DF90A8525F0F1B70F78 /* HaasVocabularyArchive.swift in Sources */,
 				04B326ED7E7A9BAB399EB71A /* HaasVocabularyEditor.swift in Sources */,
 				8AB3905CB69E928A4D15DBAD /* HaasVocabularyEntry.swift in Sources */,
@@ -1171,9 +1230,15 @@
 			files = (
 				9E100F7C1A05945A7BAB4E32 /* CleanupDefaultsMigrationTests.swift in Sources */,
 				84BDD3968770027083C107E6 /* CursorPasterClipboardTests.swift in Sources */,
+				F7D94F165C9991B72CD9BE8C /* CursorPasterReplacementTests.swift in Sources */,
+				1702F0FBED615D5FD2D75EC9 /* HaasCorrectionCoordinatorTests.swift in Sources */,
+				D413F25E91EAF6EBFE3E3C1F /* HaasCorrectionPanelModelTests.swift in Sources */,
+				7EE51F51942B0C22F735E1C8 /* HaasCorrectionSuggesterTests.swift in Sources */,
 				5A29E738783B53A9ACAC5726 /* HaasDeliveryTests.swift in Sources */,
+				0D5B03BC3A733F53758CE3A9 /* HaasFieldStateTests.swift in Sources */,
 				30E0469C3621D8A2EE8FF26C /* HaasHistoryPresentationTests.swift in Sources */,
 				1966FE8CAE13D4889D28175E /* HaasInputDeliveryTests.swift in Sources */,
+				A49071A2B48B236EF9DDAA95 /* HaasInputWatchTests.swift in Sources */,
 				A427BC7BFFB2228C005550FA /* HaasJapaneseReadingTests.swift in Sources */,
 				B838F36C021F8B768FB61D7C /* HaasModelAssetFixture.swift in Sources */,
 				EBF67FBDEDE53C7D3128AA7C /* HaasModelDownloadTests.swift in Sources */,
@@ -1185,6 +1250,7 @@
 				496B02A68405324B89162818 /* HaasPunctuationWorkerTests.swift in Sources */,
 				FA5E96B89632499EE3EDFBF5 /* HaasRecordingLifecycleTests.swift in Sources */,
 				75EC158B529370E0FFD6D4CD /* HaasRecoveryStoreTests.swift in Sources */,
+				E1343645BE42E0662EDA137F /* HaasReplacementDecisionTests.swift in Sources */,
 				F41F5C214403CBAF17064F21 /* HaasSessionTranscriptTests.swift in Sources */,
 				DECA7EAD82558B118B483B59 /* HaasSettingsStoreTests.swift in Sources */,
 				10046507E56186233FCB4749 /* HaasSharedContextMutationTests.swift in Sources */,
@@ -1224,6 +1290,10 @@
 				C5A0F2411F251EB07DF4AB25 /* HaasAppModel.swift in Sources */,
 				8E313879403F5D218B41CD32 /* HaasApplePunctuationGenerator.swift in Sources */,
 				11FE7DF255C54CDEC42B6826 /* HaasApplicationDelegate.swift in Sources */,
+				B6C6CD0BA99BF38F0C814831 /* HaasCorrectionAdapters.swift in Sources */,
+				AE0C4C34182A51124DDAC96A /* HaasCorrectionCoordinator.swift in Sources */,
+				988830D89D623EB02064E8B3 /* HaasCorrectionPanel.swift in Sources */,
+				24ADDB564215AF4608451C16 /* HaasCorrectionSuggester.swift in Sources */,
 				8AAA2E72FD34F550F6D8C882 /* HaasDictationSession.swift in Sources */,
 				A76BF386E984599F21414A5A /* HaasDictionaryView.swift in Sources */,
 				2EBE7730F398A66CC2831A89 /* HaasEngine.swift in Sources */,
@@ -1259,6 +1329,7 @@
 				DEB78A6063B764F3B5DA0122 /* HaasRecoveryHistoryView.swift in Sources */,
 				5BB87DFF1BC0B7347144987C /* HaasRecoveryState.swift in Sources */,
 				696429A041A031D5B0CC1872 /* HaasRecoveryStore.swift in Sources */,
+				9A099ABBE407A0EE18964CA9 /* HaasReplacementDecision.swift in Sources */,
 				3C84E9229B97B84654E7223F /* HaasRootView.swift in Sources */,
 				92E9F48194FA6F2B39E3DC2F /* HaasRuntimeConfiguration.swift in Sources */,
 				1101A25C19EF862527875B4A /* HaasSegmentLedger.swift in Sources */,
@@ -1272,6 +1343,7 @@
 				672A1D6EF277FD03519C5644 /* HaasUsageStatistics.swift in Sources */,
 				A3DE74FACE5A6B8FF2123A93 /* HaasUsageView.swift in Sources */,
 				5B317C6F89A8C62914121A23 /* HaasUsageWording.swift in Sources */,
+				C21C57C8AF3D203B6E7D7102 /* HaasUserInputMonitor.swift in Sources */,
 				315331E874AA4D0560E67B60 /* HaasVocabularyArchive.swift in Sources */,
 				31C8202240EF09A1F731596D /* HaasVocabularyEditor.swift in Sources */,
 				7ACAC157F74089ECFA35BED0 /* HaasVocabularyEntry.swift in Sources */,

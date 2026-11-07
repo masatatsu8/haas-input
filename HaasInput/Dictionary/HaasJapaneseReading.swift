@@ -5,7 +5,11 @@ import Foundation
 struct HaasReadingToken: Equatable {
     let range: Range<String.Index>
     let surface: String
+    /// 正規化前のひらがなの読み。読みを得られない語は surface と同じ。
+    let reading: String
     let key: String
+    /// トークナイザーから読みを得られたとき true。surface へのフォールバックでは false。
+    let hasReading: Bool
     let isJapanese: Bool
 }
 
@@ -58,11 +62,17 @@ enum HaasJapaneseReading {
             let transcription = CFStringTokenizerCopyCurrentTokenAttribute(
                 tokenizer, kCFStringTokenizerAttributeLatinTranscription
             ) as? String
-            let reading = transcription.flatMap { $0.applyingTransform(.latinToHiragana, reverse: false) } ?? surface
-            let key = matchKey(reading)
-            // 読みを得られない漢字 (髙・𠮷など) は、照合の対象にしない。
+            let hiragana = transcription.flatMap { $0.applyingTransform(.latinToHiragana, reverse: false) }
+            // 髙・𠮷などはトークナイザーが空の読みを返すため、空も「読みなし」とする。
+            let obtained = hiragana.flatMap { $0.isEmpty ? nil : $0 }
+            // 照合キーは従来どおり (読みが空なら空、読みが nil なら surface から作る)。
+            let key = matchKey(hiragana ?? surface)
+            // 読みを得られない語の reading は surface と同じ。
+            // 照合キーが空でなく日本語の文字を含む語を isJapanese とする。
+            // 読みが空の語は key が空になるので対象外、読みが nil の語は surface を読みとして対象になる。
             tokens.append(HaasReadingToken(
-                range: range, surface: surface, key: key,
+                range: range, surface: surface, reading: obtained ?? surface, key: key,
+                hasReading: obtained != nil,
                 isJapanese: !key.isEmpty && surface.unicodeScalars.contains(where: isJapaneseScalar)
             ))
         }

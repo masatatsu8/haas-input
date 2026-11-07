@@ -91,6 +91,9 @@ private struct HaasGeneralSettingsView: View {
                 LabeledContent("履歴を開く") {
                     ShortcutRecorder(action: .openQuickHistory) { shortcuts.updateShortcutStatus() }
                 }
+                LabeledContent("直前の入力を直す") {
+                    ShortcutRecorder(action: .correctLastInput) { shortcuts.updateShortcutStatus() }
+                }
                 LabeledContent("録音を取り消す") {
                     HStack {
                         ShortcutRecorder(
