@@ -8,7 +8,7 @@ enum HaasPunctuationMode: String, CaseIterable {
     static let settingsKey = "HaasPunctuationMode"
 
     static var stored: Self {
-        Self(rawValue: UserDefaults.standard.string(forKey: settingsKey) ?? "") ?? .fast
+        Self(rawValue: UserDefaults.standard.string(forKey: settingsKey) ?? "") ?? .natural
     }
 
     var displayName: String {

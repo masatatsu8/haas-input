@@ -272,6 +272,14 @@ final class HaasPunctuationWorkerTests: XCTestCase {
     func testPromptFramesTranscriptSoTheModelDoesNotReplyToIt() {
         XCTAssertEqual(HaasPunctuationPrompt.wrapping("明日の予定を教えてください"), "書き起こし: 明日の予定を教えてください\n出力:")
     }
+
+    func testStoredModeDefaultsToNaturalWhenUnset() {
+        let defaults = UserDefaults.standard
+        let saved = defaults.string(forKey: HaasPunctuationMode.settingsKey)
+        defer { defaults.set(saved, forKey: HaasPunctuationMode.settingsKey) }
+        defaults.removeObject(forKey: HaasPunctuationMode.settingsKey)
+        XCTAssertEqual(HaasPunctuationMode.stored, .natural)
+    }
 }
 
 private enum InjectedGenerationError: Error { case failed }

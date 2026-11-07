@@ -37,9 +37,9 @@ private struct HaasGeneralSettingsView: View {
     @ObservedObject var shortcuts: RecordingShortcutManager
     @ObservedObject var presentation: HaasRecorderPresentation
     @ObservedObject private var launchAtLogin = LaunchAtLoginManager.shared
-    @AppStorage(HaasPunctuationMode.settingsKey) private var punctuationMode = HaasPunctuationMode.fast
+    @AppStorage(HaasPunctuationMode.settingsKey) private var punctuationMode = HaasPunctuationMode.natural
     @AppStorage(RecorderDisplaySettingsKeys.showLiveTranscript) private var showLiveTranscript = true
-    @AppStorage("clipboardRestoreDelay") private var clipboardRestoreDelay = 2.0
+    @AppStorage("clipboardRestoreDelay") private var clipboardRestoreDelay = 0.5
     @AppStorage(AppAppearancePreference.userDefaultsKey) private var appearance = AppAppearancePreference.system
     @AppStorage(CleanupSettingsKeys.isTranscriptionCleanupEnabled) private var transcriptCleanup = true
     @AppStorage(CleanupSettingsKeys.transcriptionRetentionMinutes) private var transcriptRetention = 10080
