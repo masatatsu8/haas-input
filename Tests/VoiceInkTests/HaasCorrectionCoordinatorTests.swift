@@ -270,6 +270,86 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.replacer.copies, ["巽です"])
     }
 
+    func testIgnoredPasteIntoFieldEndingWithSameTextOnlyCopies() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        // 文字数の上限で貼り付けが無視され、欄は元から「はい」で終わっている
+        let field = FakeField(text: "はい")
+        fixture.deliver(text: "はい", field: field, baseline: .some(.readable(textBeforeInsertion: "はい")))
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
+
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "いいえ", register: [])
+
+        XCTAssertEqual(outcome.result, .copied(copiedMessage))
+        XCTAssertTrue(fixture.replacer.calls.isEmpty)
+        XCTAssertEqual(field.text, "はい")
+    }
+
+    func testReadableFieldWithoutInsertionRecordOnlyCopies() throws {
+        for baseline in [HaasInsertionBaseline?.none, .unreadable] {
+            let fixture = try CorrectionFixture()
+            defer { fixture.cleanUp() }
+            fixture.deliver(text: "たつみです", field: FakeField(text: "前の文。たつみです"), baseline: baseline)
+            XCTAssertEqual(fixture.coordinator.begin()?.decision, .copyOnly(.insertionUnverified), "\(String(describing: baseline))")
+        }
+    }
+
+    func testTextAfterCaretChangeDuringDeletionStops() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        let field = FakeField(text: "前の文。たつみです", after: "続き")
+        // 1回目の Backspace で、カーソルの後ろの文字まで消える
+        field.alsoDeleteAfterAtBackspace = 1
+        fixture.deliver(text: "たつみです", field: field)
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        XCTAssertEqual(draft.decision, .replaceAutomatically(deleteCount: 5))
+
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "巽です", register: [])
+
+        XCTAssertEqual(outcome.result, .copied(interruptedMessage))
+        XCTAssertEqual(fixture.replacer.lastOutcome, .deletionInterrupted(deleted: 1))
+        XCTAssertEqual(field.backspaces, 1)
+        XCTAssertEqual(fixture.replacer.copies, ["巽です"])
+    }
+
+    func testStopsBeforeBackspaceThatWouldDeleteClosingPair() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        // 既存の「)」の直前に「(あ」を入れた。「(」を消すと、エディタが「)」も一緒に消す
+        let field = FakeField(text: "前の文。(あ", after: ")")
+        field.deletesClosingPair = true
+        fixture.deliver(text: "(あ", field: field)
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        XCTAssertEqual(draft.decision, .replaceAutomatically(deleteCount: 2))
+
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "(い", register: [])
+
+        XCTAssertEqual(outcome.result, .copied(interruptedMessage))
+        XCTAssertEqual(fixture.replacer.lastOutcome, .deletionInterrupted(deleted: 1))
+        // 「あ」だけ消して、「(」の Backspace は送らない
+        XCTAssertEqual(field.backspaces, 1)
+        XCTAssertEqual(field.text, "前の文。(")
+        XCTAssertEqual(field.after, ")")
+    }
+
+    func testSelectionChangeAfterCommandDownDoesNotPaste() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        let field = FakeField(text: "前の文。たつみです")
+        fixture.deliver(text: "たつみです", field: field)
+        // ⌘ を押した後、入力先の遅れた処理が既存の文を選ぶ
+        fixture.replacer.onCommandDown = { field.selectionLength = 1 }
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "巽です", register: [])
+
+        XCTAssertEqual(fixture.replacer.lastOutcome, .pasteUncertain)
+        XCTAssertEqual(field.pastes, 0)
+        XCTAssertEqual(field.text, "前の文。")
+        XCTAssertEqual(outcome.result, .copied(interruptedMessage))
+    }
+
     func testUnreadableTargetReplacesWithoutFieldCheck() async throws {
         let fixture = try CorrectionFixture()
         defer { fixture.cleanUp() }
@@ -474,14 +554,27 @@ private final class CorrectionFixture {
         container.mainContext.autosaveEnabled = false
     }
 
-    /// 配信の記録を作る。field が nil なら入力先なし
+    /// 配信の記録を作る。field が nil なら入力先なし。
+    /// baseline を渡さなければ、今の欄から入れた文を除いたものを、貼る前の欄として記録する
     @discardableResult
-    func deliver(text: String, field: FakeField?, posted: Bool = true, transcriptionID: UUID? = nil) -> FakeTarget? {
+    func deliver(
+        text: String, field: FakeField?, posted: Bool = true, transcriptionID: UUID? = nil,
+        baseline: HaasInsertionBaseline?? = .none
+    ) -> FakeTarget? {
         let target = field.map { FakeTarget(field: $0) }
         replacer.field = field
+        let recorded: HaasInsertionBaseline?
+        if let baseline {
+            recorded = baseline
+        } else if let field {
+            recorded = field.readable
+                ? .readable(textBeforeInsertion: String(field.text.dropLast(text.count))) : .unreadable
+        } else {
+            recorded = nil
+        }
         provider.lastDeliveredInput = HaasDeliveredInput(
             sessionID: UUID(), transcriptionID: transcriptionID, text: text, allSegmentsPosted: posted,
-            target: target, watchToken: watcher.startWatching())
+            target: target, watchToken: watcher.startWatching(), insertionBaseline: recorded)
         return target
     }
 
@@ -503,28 +596,37 @@ private final class CorrectionFixture {
     }
 }
 
-/// カーソルが末尾にある入力欄の偽物
+/// 入力欄の偽物。text はカーソルの前、after はカーソルの後ろ
 @MainActor
 private final class FakeField {
     var text: String
+    var after: String
     var selectionLength = 0
     var readable = true
     var selectAfterBackspaces: Int?
+    /// この回の Backspace で、カーソルの後ろの1文字も消える
+    var alsoDeleteAfterAtBackspace: Int?
+    /// 開き括弧を消すとき、直後の閉じ括弧も消す (VS Code の対の削除)
+    var deletesClosingPair = false
     /// Backspace の後、この回数読むまでは前の中身を返す
     var staleReadsAfterBackspace = 0
     private(set) var backspaces = 0
+    private(set) var pastes = 0
     private var staleText: String?
     private var staleReadsLeft = 0
 
-    init(text: String) { self.text = text }
+    init(text: String, after: String = "") {
+        self.text = text
+        self.after = after
+    }
 
     var state: HaasFieldState {
         guard readable else { return .unreadable }
         if let staleText, staleReadsLeft > 0 {
             staleReadsLeft -= 1
-            return .readable(textBeforeCaret: staleText, selectionLength: selectionLength)
+            return .readable(textBeforeCaret: staleText, textAfterCaret: after, selectionLength: selectionLength)
         }
-        return .readable(textBeforeCaret: text, selectionLength: selectionLength)
+        return .readable(textBeforeCaret: text, textAfterCaret: after, selectionLength: selectionLength)
     }
 
     func backspace() {
@@ -532,9 +634,21 @@ private final class FakeField {
             staleText = text
             staleReadsLeft = staleReadsAfterBackspace
         }
+        if deletesClosingPair, let last = text.last,
+            let closing = HaasReplacementDecision.closingPairs[last], after.first == closing
+        {
+            after.removeFirst()
+        }
         if !text.isEmpty { text.removeLast() }
         backspaces += 1
+        if backspaces == alsoDeleteAfterAtBackspace, !after.isEmpty { after.removeFirst() }
         if backspaces == selectAfterBackspaces { selectionLength = 1 }
+    }
+
+    func paste(_ pasted: String) {
+        text += pasted
+        selectionLength = 0
+        pastes += 1
     }
 }
 
@@ -575,7 +689,7 @@ private final class FakeCorrectionWatcher: HaasInputWatching {
     func userActed() { current = nil }
 }
 
-/// 入力欄の偽物に Backspace と貼り付けを反映する置き換え役
+/// 入力欄の偽物に Backspace と貼り付けを反映する置き換え役。手順は CursorPaster の本物を使う
 @MainActor
 private final class FakeReplacer: HaasCorrectionReplacing {
     struct Call: Equatable {
@@ -587,20 +701,42 @@ private final class FakeReplacer: HaasCorrectionReplacing {
     var field: FakeField?
     var forcedOutcome: HaasReplaceOutcome?
     var copyResult = true
+    /// ⌘ を押した直後 (V を押す前) に起きること
+    var onCommandDown: (() -> Void)?
     private(set) var calls: [Call] = []
     private(set) var copies: [String] = []
     private(set) var lastOutcome: HaasReplaceOutcome?
 
     func replace(
-        _ text: String, deleteCount: Int, shouldContinue: @escaping (_ deleted: Int) async -> Bool,
-        pasteGuard: @escaping () -> Bool
+        _ text: String, deleteCount: Int,
+        awaitField: @escaping @MainActor (_ deleted: Int) async -> Bool,
+        shouldContinue: @escaping @MainActor (_ deleted: Int) -> Bool,
+        pasteGuard: @escaping @MainActor (CursorPaster.PastePhase) -> Bool
     ) async -> HaasReplaceOutcome {
         calls.append(Call(text: text, deleteCount: deleteCount))
         let outcome: HaasReplaceOutcome
         if let forcedOutcome {
             outcome = forcedOutcome
         } else {
-            outcome = await simulate(text, deleteCount: deleteCount, shouldContinue, pasteGuard)
+            let field = self.field
+            let onCommandDown = self.onCommandDown
+            outcome = await CursorPaster.runReplacement(
+                deleteCount: deleteCount, awaitField: awaitField, shouldContinue: shouldContinue,
+                postBackspaceDown: {
+                    field?.backspace()
+                    return true
+                },
+                paste: {
+                    await CursorPaster.runPasteCommand(
+                        pasteRejection: { pasteGuard($0) ? nil : .commandNotPosted },
+                        post: { key in
+                            switch key {
+                            case .commandDown: onCommandDown?()
+                            case .vDown: field?.paste(text)
+                            case .vUp, .commandUp: break
+                            }
+                        })
+                })
         }
         lastOutcome = outcome
         return outcome
@@ -609,21 +745,5 @@ private final class FakeReplacer: HaasCorrectionReplacing {
     func copy(_ text: String) -> Bool {
         copies.append(text)
         return copyResult
-    }
-
-    /// CursorPaster.runReplacement と同じ順で確かめる
-    private func simulate(
-        _ text: String, deleteCount: Int, _ shouldContinue: (Int) async -> Bool, _ pasteGuard: () -> Bool
-    ) async -> HaasReplaceOutcome {
-        var deleted = 0
-        while deleted < deleteCount {
-            guard await shouldContinue(deleted) else { return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted) }
-            field?.backspace()
-            deleted += 1
-        }
-        guard await shouldContinue(deleted) else { return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted) }
-        guard pasteGuard() else { return .pasteUncertain }
-        field?.text += text
-        return .completed
     }
 }

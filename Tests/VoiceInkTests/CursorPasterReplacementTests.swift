@@ -13,23 +13,29 @@ final class CursorPasterReplacementTests: XCTestCase {
     private func run(
         deleteCount: Int = 3,
         stopAtCheck: Int? = nil,
+        stopAtAwait: Int? = nil,
         failBackspaceAt: Int? = nil,
         pasteResult: CursorPaster.PasteResult = .commandPosted,
         recorder: Recorder
     ) async -> HaasReplaceOutcome {
         await CursorPaster.runReplacement(
             deleteCount: deleteCount,
+            awaitField: { deleted in
+                recorder.events.append("await\(deleted)")
+                return deleted != stopAtAwait
+            },
             shouldContinue: { deleted in
                 recorder.checks.append(deleted)
                 recorder.events.append("check\(deleted)")
                 return deleted != stopAtCheck
             },
-            postBackspace: {
+            postBackspaceDown: {
                 if recorder.backspaces == failBackspaceAt { return false }
                 recorder.backspaces += 1
                 recorder.events.append("backspace")
                 return true
             },
+            finishBackspace: { recorder.events.append("keyUp") },
             paste: {
                 recorder.pastes += 1
                 recorder.events.append("paste")
@@ -94,7 +100,72 @@ final class CursorPasterReplacementTests: XCTestCase {
         XCTAssertEqual(outcome, .completed)
         XCTAssertEqual(
             recorder.events,
-            ["check0", "backspace", "check1", "backspace", "check2", "backspace", "check3", "paste"])
+            [
+                "await0", "check0", "backspace", "keyUp", "await1", "check1", "backspace", "keyUp",
+                "await2", "check2", "backspace", "keyUp", "await3", "check3", "paste",
+            ])
+    }
+
+    func testWaitingFieldCheckFailureStopsBeforeSyncCheck() async {
+        let recorder = Recorder()
+        let outcome = await run(stopAtAwait: 1, recorder: recorder)
+        XCTAssertEqual(outcome, .deletionInterrupted(deleted: 1))
+        XCTAssertEqual(recorder.checks, [0])
+        XCTAssertEqual(recorder.backspaces, 1)
+        XCTAssertEqual(recorder.pastes, 0)
+    }
+
+    // MARK: - ⌘V の手順
+
+    private func runPaste(
+        rejectAt rejected: CursorPaster.PastePhase? = nil,
+        phases: inout [CursorPaster.PastePhase], keys: inout [CursorPaster.PasteKey]
+    ) async -> CursorPaster.PasteResult {
+        var seenPhases: [CursorPaster.PastePhase] = []
+        var posted: [CursorPaster.PasteKey] = []
+        let result = await CursorPaster.runPasteCommand(
+            pasteRejection: { phase in
+                seenPhases.append(phase)
+                return phase == rejected ? .commandNotPosted : nil
+            },
+            post: { posted.append($0) })
+        phases = seenPhases
+        keys = posted
+        return result
+    }
+
+    func testPasteChecksBeforeCommandBeforeVAndAfter() async {
+        var phases: [CursorPaster.PastePhase] = []
+        var keys: [CursorPaster.PasteKey] = []
+        let result = await runPaste(phases: &phases, keys: &keys)
+        XCTAssertEqual(result, .commandPosted)
+        XCTAssertEqual(phases, [.beforeCommand, .beforeV, .afterCommand])
+        XCTAssertEqual(keys, [.commandDown, .vDown, .vUp, .commandUp])
+    }
+
+    func testPasteRejectedBeforeVReleasesCommandWithoutV() async {
+        var phases: [CursorPaster.PastePhase] = []
+        var keys: [CursorPaster.PasteKey] = []
+        let result = await runPaste(rejectAt: .beforeV, phases: &phases, keys: &keys)
+        XCTAssertEqual(result, .commandNotPosted)
+        XCTAssertEqual(phases, [.beforeCommand, .beforeV])
+        XCTAssertEqual(keys, [.commandDown, .commandUp])
+    }
+
+    func testPasteRejectedBeforeCommandPostsNothing() async {
+        var phases: [CursorPaster.PastePhase] = []
+        var keys: [CursorPaster.PasteKey] = []
+        let result = await runPaste(rejectAt: .beforeCommand, phases: &phases, keys: &keys)
+        XCTAssertEqual(result, .commandNotPosted)
+        XCTAssertEqual(keys, [])
+    }
+
+    func testPasteRejectedAfterCommandIsPartial() async {
+        var phases: [CursorPaster.PastePhase] = []
+        var keys: [CursorPaster.PasteKey] = []
+        let result = await runPaste(rejectAt: .afterCommand, phases: &phases, keys: &keys)
+        XCTAssertEqual(result, .commandPartiallyPosted)
+        XCTAssertEqual(keys, [.commandDown, .vDown, .vUp, .commandUp])
     }
 
     func testWaitsForModifierReleaseBeforeFirstCheck() async {
@@ -109,7 +180,7 @@ final class CursorPasterReplacementTests: XCTestCase {
                 recorder.events.append("check\(deleted)")
                 return true
             },
-            postBackspace: {
+            postBackspaceDown: {
                 recorder.events.append("backspace")
                 return true
             },
@@ -131,7 +202,7 @@ final class CursorPasterReplacementTests: XCTestCase {
                 recorder.checks.append(deleted)
                 return true
             },
-            postBackspace: {
+            postBackspaceDown: {
                 recorder.backspaces += 1
                 return true
             },
@@ -183,7 +254,7 @@ final class CursorPasterReplacementTests: XCTestCase {
                     flags: { [.maskCommand] }, timeout: .milliseconds(30), pollInterval: .milliseconds(5))
             },
             shouldContinue: { _ in true },
-            postBackspace: {
+            postBackspaceDown: {
                 recorder.backspaces += 1
                 return true
             },
@@ -200,6 +271,6 @@ final class CursorPasterReplacementTests: XCTestCase {
         let recorder = Recorder()
         let outcome = await run(deleteCount: 0, recorder: recorder)
         XCTAssertEqual(outcome, .completed)
-        XCTAssertEqual(recorder.events, ["check0", "paste"])
+        XCTAssertEqual(recorder.events, ["await0", "check0", "paste"])
     }
 }

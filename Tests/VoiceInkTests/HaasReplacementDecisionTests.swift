@@ -1,19 +1,26 @@
 import XCTest
 @testable import VoiceInk
 
+private func readable(_ before: String, after: String = "", selection: Int = 0) -> HaasFieldState {
+    .readable(textBeforeCaret: before, textAfterCaret: after, selectionLength: selection)
+}
+
 final class HaasReplacementDecisionTests: XCTestCase {
     private func context(
         inserted: String = "合っていますか",
         allPosted: Bool = true,
         watched: Bool = true,
         unchanged: Bool = true,
-        field: HaasFieldState = .readable(textBeforeCaret: "前の文。合っていますか", selectionLength: 0)
+        field: HaasFieldState = readable("前の文。合っていますか"),
+        baseline: HaasInsertionBaseline? = .readable(textBeforeInsertion: "前の文。")
     ) -> HaasReplacementContext {
         HaasReplacementContext(
             insertedText: inserted, allSegmentsPosted: allPosted,
-            watchedWithoutUserInput: watched, targetUnchanged: unchanged, field: field
+            watchedWithoutUserInput: watched, targetUnchanged: unchanged, field: field,
+            insertionBaseline: baseline
         )
     }
+
 
     func testEmptyInsertedTextIsNoRecord() {
         XCTAssertEqual(HaasReplacementDecision.decide(context(inserted: "")), .copyOnly(.noRecord))
@@ -32,7 +39,7 @@ final class HaasReplacementDecisionTests: XCTestCase {
     }
 
     func testSelectionNotEmpty() {
-        let field = HaasFieldState.readable(textBeforeCaret: "前の文。合っていますか", selectionLength: 1)
+        let field = readable("前の文。合っていますか", selection: 1)
         XCTAssertEqual(HaasReplacementDecision.decide(context(field: field)), .copyOnly(.selectionNotEmpty))
     }
 
@@ -41,14 +48,44 @@ final class HaasReplacementDecisionTests: XCTestCase {
     }
 
     func testReadableMismatch() {
-        let field = HaasFieldState.readable(textBeforeCaret: "合っています", selectionLength: 0)
+        let field = readable("合っています")
         XCTAssertEqual(HaasReplacementDecision.decide(context(field: field)), .copyOnly(.textMismatch))
     }
 
-    func testReadableMultilineMatchReplacesAutomatically() {
-        let field = HaasFieldState.readable(textBeforeCaret: "前\nA\nB", selectionLength: 0)
+    func testMatchingSuffixAloneDoesNotProveInsertion() {
+        // 文字数の上限で貼り付けが無視され、欄が元から入れた文と同じ文で終わっている
+        let field = readable("はい")
         XCTAssertEqual(
-            HaasReplacementDecision.decide(context(inserted: "A\nB", field: field)),
+            HaasReplacementDecision.decide(
+                context(inserted: "はい", field: field, baseline: .readable(textBeforeInsertion: "はい"))),
+            .copyOnly(.textMismatch))
+        // 貼る前の中身に入れた文を足したものと一致すれば消せる
+        XCTAssertEqual(
+            HaasReplacementDecision.decide(
+                context(inserted: "はい", field: readable("はいはい"), baseline: .readable(textBeforeInsertion: "はい"))),
+            .replaceAutomatically(deleteCount: 2))
+    }
+
+    func testReadableFieldWithoutBaselineOnlyCopies() {
+        XCTAssertEqual(HaasReplacementDecision.decide(context(baseline: nil)), .copyOnly(.insertionUnverified))
+        XCTAssertEqual(
+            HaasReplacementDecision.decide(context(field: .unreadable, baseline: nil)), .copyOnly(.insertionUnverified))
+    }
+
+    func testFieldUnreadableAtInsertionButReadableNowOnlyCopies() {
+        XCTAssertEqual(
+            HaasReplacementDecision.decide(context(baseline: .unreadable)), .copyOnly(.insertionUnverified))
+        // 今も読めなければ、確認付きの置き換えのまま
+        XCTAssertEqual(
+            HaasReplacementDecision.decide(context(field: .unreadable, baseline: .unreadable)),
+            .replaceAfterConfirmation(deleteCount: 7))
+    }
+
+    func testReadableMultilineMatchReplacesAutomatically() {
+        let field = readable("前\nA\nB")
+        XCTAssertEqual(
+            HaasReplacementDecision.decide(
+                context(inserted: "A\nB", field: field, baseline: .readable(textBeforeInsertion: "前\n"))),
             .replaceAutomatically(deleteCount: 3)
         )
     }
@@ -79,9 +116,10 @@ final class HaasReplacementDecisionTests: XCTestCase {
     }
 
     func testEmojiSequenceCountsAsOneCharacter() {
-        let field = HaasFieldState.readable(textBeforeCaret: "👩‍💻です", selectionLength: 0)
+        let field = readable("👩‍💻です")
         XCTAssertEqual(
-            HaasReplacementDecision.decide(context(inserted: "👩‍💻です", field: field)),
+            HaasReplacementDecision.decide(
+                context(inserted: "👩‍💻です", field: field, baseline: .readable(textBeforeInsertion: ""))),
             .replaceAutomatically(deleteCount: 3)
         )
     }
@@ -114,30 +152,57 @@ final class HaasReplacementDecisionTests: XCTestCase {
         )
     }
 
+    private let expectation = HaasFieldExpectation(
+        textBeforeInsertion: "前の文。", insertedText: "合っていますか", textAfterCaret: "後ろの文")
+
     func testFieldMatchesProgress() {
-        let before = "前の文。"
-        let inserted = "合っていますか"
         XCTAssertTrue(HaasReplacementDecision.fieldMatchesProgress(
-            .readable(textBeforeCaret: "前の文。合っていま", selectionLength: 0),
-            textBeforeInsertion: before, insertedText: inserted, deleted: 2))
+            readable("前の文。合っていま", after: "後ろの文"), expectation: expectation, deleted: 2))
         XCTAssertFalse(HaasReplacementDecision.fieldMatchesProgress(
-            .readable(textBeforeCaret: "前の文。合っていま", selectionLength: 1),
-            textBeforeInsertion: before, insertedText: inserted, deleted: 2))
+            readable("前の文。合っていま", after: "後ろの文", selection: 1), expectation: expectation, deleted: 2))
         XCTAssertFalse(HaasReplacementDecision.fieldMatchesProgress(
-            .readable(textBeforeCaret: "前の文。合ってい", selectionLength: 0),
-            textBeforeInsertion: before, insertedText: inserted, deleted: 2))
+            readable("前の文。合ってい", after: "後ろの文"), expectation: expectation, deleted: 2))
         XCTAssertFalse(HaasReplacementDecision.fieldMatchesProgress(
-            .unreadable, textBeforeInsertion: before, insertedText: inserted, deleted: 2))
+            .unreadable, expectation: expectation, deleted: 2))
+    }
+
+    func testFieldMatchesProgressNeedsSameTextAfterCaret() {
+        // 前は合っていても、カーソルの後ろが開いたときと違えば止める (後ろの文字まで消えた)
+        XCTAssertFalse(HaasReplacementDecision.fieldMatchesProgress(
+            readable("前の文。合っていま", after: "ろの文"), expectation: expectation, deleted: 2))
+        XCTAssertFalse(HaasReplacementDecision.fieldMatchesProgress(
+            readable("前の文。合っていま", after: ""), expectation: expectation, deleted: 2))
+    }
+
+    func testBackspaceMayDeleteBeyondCaretForPairs() {
+        let pairs: [(String, String)] = [
+            ("(", ")"), ("[", "]"), ("{", "}"), ("「", "」"), ("『", "』"), ("\"", "\""), ("'", "'"),
+        ]
+        for (open, close) in pairs {
+            XCTAssertTrue(
+                HaasReplacementDecision.backspaceMayDeleteBeyondCaret(readable("f\(open)", after: "\(close)後")),
+                "\(open)\(close)")
+            // 閉じ側が直後になければ消してよい
+            XCTAssertFalse(
+                HaasReplacementDecision.backspaceMayDeleteBeyondCaret(readable("f\(open)", after: "x\(close)")),
+                "\(open)\(close)")
+        }
+        XCTAssertFalse(HaasReplacementDecision.backspaceMayDeleteBeyondCaret(readable("f(", after: "]")))
+        XCTAssertFalse(HaasReplacementDecision.backspaceMayDeleteBeyondCaret(readable("あ", after: ")")))
+        XCTAssertFalse(HaasReplacementDecision.backspaceMayDeleteBeyondCaret(.unreadable))
     }
 
     // MARK: - 消している途中の読み直し
 
+    @MainActor
     private func awaitProgress(
         deleted: Int, window: Duration = .milliseconds(150), states: [HaasFieldState], reads: inout Int
     ) async -> Bool {
         var count = 0
-        let result = await HaasReplacementDecision.awaitFieldProgress(
-            textBeforeInsertion: "前の文。", insertedText: "合っていますか", deleted: deleted,
+        let result = await HaasCorrectionCoordinator.awaitFieldProgress(
+            expectation: HaasFieldExpectation(
+                textBeforeInsertion: "前の文。", insertedText: "合っていますか", textAfterCaret: ""),
+            deleted: deleted,
             readField: {
                 defer { count += 1 }
                 return states[min(count, states.count - 1)]
@@ -147,18 +212,20 @@ final class HaasReplacementDecisionTests: XCTestCase {
         return result
     }
 
+    @MainActor
     func testStaleFieldThenUpdatedProceeds() async {
         // 2文字目を消した直後、欄はまだ1文字消した状態を2回返し、その後に追いつく
-        let stale = HaasFieldState.readable(textBeforeCaret: "前の文。合っています", selectionLength: 0)
-        let updated = HaasFieldState.readable(textBeforeCaret: "前の文。合っていま", selectionLength: 0)
+        let stale = readable("前の文。合っています")
+        let updated = readable("前の文。合っていま")
         var reads = 0
         let proceeds = await awaitProgress(deleted: 2, states: [stale, stale, updated], reads: &reads)
         XCTAssertTrue(proceeds)
         XCTAssertEqual(reads, 3)
     }
 
+    @MainActor
     func testStaleFieldUntilTimeoutStops() async {
-        let stale = HaasFieldState.readable(textBeforeCaret: "前の文。合っています", selectionLength: 0)
+        let stale = readable("前の文。合っています")
         var reads = 0
         let started = ContinuousClock.now
         let proceeds = await awaitProgress(deleted: 2, window: .milliseconds(40), states: [stale], reads: &reads)
@@ -167,14 +234,17 @@ final class HaasReplacementDecisionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(ContinuousClock.now - started, .milliseconds(40))
     }
 
+    @MainActor
     func testUnexpectedFieldStopsAtOnce() async {
         let unexpected: [HaasFieldState] = [
             // 2文字消えている (1文字多い)
-            .readable(textBeforeCaret: "前の文。合ってい", selectionLength: 0),
+            readable("前の文。合ってい"),
             // 利用者が文字を足した
-            .readable(textBeforeCaret: "前の文。合っていますx", selectionLength: 0),
+            readable("前の文。合っていますx"),
             // 前の段階の中身でも、選択があれば待たない
-            .readable(textBeforeCaret: "前の文。合っています", selectionLength: 1),
+            readable("前の文。合っています", selection: 1),
+            // 前の段階の中身でも、カーソルの後ろが変われば待たない
+            readable("前の文。合っています", after: ")"),
             .unreadable,
         ]
         for state in unexpected {
@@ -185,16 +255,14 @@ final class HaasReplacementDecisionTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testFirstCheckHasNoPreviousStepToWaitFor() async {
         // 消す前 (deleted == 0) の欄が入れた文と合わなければ、待たずに止める
         var reads = 0
-        let proceeds = await awaitProgress(
-            deleted: 0, states: [.readable(textBeforeCaret: "前の文。合っていま", selectionLength: 0)], reads: &reads)
+        let proceeds = await awaitProgress(deleted: 0, states: [readable("前の文。合っていま")], reads: &reads)
         XCTAssertFalse(proceeds)
         XCTAssertEqual(reads, 1)
-        let matches = await awaitProgress(
-            deleted: 0, states: [.readable(textBeforeCaret: "前の文。合っていますか", selectionLength: 0)],
-            reads: &reads)
+        let matches = await awaitProgress(deleted: 0, states: [readable("前の文。合っていますか")], reads: &reads)
         XCTAssertTrue(matches)
     }
 }

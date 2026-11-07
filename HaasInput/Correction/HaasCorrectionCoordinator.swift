@@ -39,6 +39,8 @@ final class HaasCorrectionCoordinator: ObservableObject {
         let allSegmentsPosted: Bool
         let target: (any HaasInputTargetChecking)?
         let watchToken: UUID?
+        /// 入れる前の欄の記録。読める欄では、これに入れた文を足したものとちょうど一致するときだけ消す
+        let insertionBaseline: HaasInsertionBaseline?
         /// 値があれば、入力先の状態にかかわらずコピーだけにする
         let forcedCopyReason: HaasCopyReason?
         /// 直した文をまだクリップボードに入れられていない。同じ文で確定しても、コピーだけやり直す
@@ -49,8 +51,8 @@ final class HaasCorrectionCoordinator: ObservableObject {
     private struct Session {
         let draft: HaasCorrectionDraft
         let input: LastInput
-        /// 読める欄で、カーソルの直前から入れた文を除いた部分
-        let textBeforeInsertion: String?
+        /// 読める欄で自動で置き換えるときの、消している途中の欄のあるべき姿
+        let expectation: HaasFieldExpectation?
         /// 閉じた後に前面へ戻す先 (置き換えの入力先とは別に持つ)
         let returnTarget: (any HaasInputTargetChecking)?
     }
@@ -116,14 +118,17 @@ final class HaasCorrectionCoordinator: ObservableObject {
         let returnTarget = captureReturnTarget()
         guard let input = currentInput() else { return nil }
         let (decision, field) = evaluate(input)
-        var textBeforeInsertion: String?
-        if case .replaceAutomatically = decision, case let .readable(textBeforeCaret, _) = field {
-            textBeforeInsertion = String(textBeforeCaret.dropLast(input.text.count))
+        var expectation: HaasFieldExpectation?
+        if case .replaceAutomatically = decision, case let .readable(_, textAfterCaret, _) = field,
+            case let .readable(textBeforeInsertion)? = input.insertionBaseline
+        {
+            // カーソルの後ろは開いたときの中身で固定し、消している間に変われば止める
+            expectation = HaasFieldExpectation(
+                textBeforeInsertion: textBeforeInsertion, insertedText: input.text, textAfterCaret: textAfterCaret)
         }
         let draft = HaasCorrectionDraft(
             originalText: input.text, transcriptionID: input.transcriptionID, decision: decision)
-        session = Session(
-            draft: draft, input: input, textBeforeInsertion: textBeforeInsertion, returnTarget: returnTarget)
+        session = Session(draft: draft, input: input, expectation: expectation, returnTarget: returnTarget)
         return draft
     }
 
@@ -176,7 +181,8 @@ final class HaasCorrectionCoordinator: ObservableObject {
                 sessionID: carried.sessionID,
                 transcriptionID: delivered?.transcriptionID ?? carried.transcriptionID,
                 text: carried.text, allSegmentsPosted: carried.allSegmentsPosted, target: carried.target,
-                watchToken: carried.watchToken, forcedCopyReason: carried.forcedCopyReason,
+                watchToken: carried.watchToken, insertionBaseline: carried.insertionBaseline,
+                forcedCopyReason: carried.forcedCopyReason,
                 copyPending: carried.copyPending)
         }
         if let delivered {
@@ -185,7 +191,8 @@ final class HaasCorrectionCoordinator: ObservableObject {
             return LastInput(
                 sessionID: delivered.sessionID, transcriptionID: delivered.transcriptionID, text: delivered.text,
                 allSegmentsPosted: delivered.allSegmentsPosted, target: delivered.target,
-                watchToken: delivered.watchToken, forcedCopyReason: nil)
+                watchToken: delivered.watchToken, insertionBaseline: delivered.insertionBaseline,
+                forcedCopyReason: nil)
         }
         return latestHistoryInput()
     }
@@ -204,7 +211,7 @@ final class HaasCorrectionCoordinator: ObservableObject {
         else { return nil }
         return LastInput(
             sessionID: nil, transcriptionID: row.id, text: row.preferredHistoryText, allSegmentsPosted: false,
-            target: nil, watchToken: nil, forcedCopyReason: .noRecord)
+            target: nil, watchToken: nil, insertionBaseline: nil, forcedCopyReason: .noRecord)
     }
 
     /// 入力先と見張りの今の状態から判定する
@@ -215,7 +222,8 @@ final class HaasCorrectionCoordinator: ObservableObject {
         let watchedClean = input.watchToken.map { monitor.isClean(for: $0) } ?? false
         let decision = HaasReplacementDecision.decide(HaasReplacementContext(
             insertedText: input.text, allSegmentsPosted: input.allSegmentsPosted,
-            watchedWithoutUserInput: watchedClean, targetUnchanged: targetUnchanged, field: field))
+            watchedWithoutUserInput: watchedClean, targetUnchanged: targetUnchanged, field: field,
+            insertionBaseline: input.insertionBaseline))
         return (decision, field)
     }
 
@@ -232,39 +240,56 @@ final class HaasCorrectionCoordinator: ObservableObject {
         await waitForFocus(target)
         let decision = HaasReplacementDecision.confirmed(shown: session.draft.decision, now: evaluate(session.input).0)
         let deleteCount: Int
-        let textBeforeInsertion: String?
+        let expectation: HaasFieldExpectation?
         switch decision {
         case let .replaceAutomatically(count):
-            guard let before = session.textBeforeInsertion else {
+            guard let shownExpectation = session.expectation else {
                 return copy(corrected, session: session, message: Self.copiedMessage)
             }
             deleteCount = count
-            textBeforeInsertion = before
+            expectation = shownExpectation
         case let .replaceAfterConfirmation(count):
             // 読めない入力先は、利用者が消す文字数を確かめて押したので、欄の中身は確かめない
             deleteCount = count
-            textBeforeInsertion = nil
+            expectation = nil
         case let .copyOnly(reason):
             logger.notice("correction phase=confirm result=copy reason=\(String(describing: reason), privacy: .public)")
             return copy(corrected, session: session, message: Self.copiedMessage)
         }
 
         let monitor = self.monitor
-        let insertedText = session.input.text
         let isSafe = { target.rejectionReason() == nil && monitor.isClean(for: token) }
         let outcome = await replacer.replace(
             corrected, deleteCount: deleteCount,
+            awaitField: { deleted in
+                guard isSafe() else { return false }
+                guard let expectation else { return true }
+                return await Self.awaitFieldProgress(
+                    expectation: expectation, deleted: deleted, readField: { target.fieldState() })
+            },
+            // Backspace の keyDown の直前に同期で呼ばれる。待った間の操作も見逃さないよう、ここで改めて全部確かめる
             shouldContinue: { deleted in
                 guard isSafe() else { return false }
-                guard let textBeforeInsertion else { return true }
-                guard await HaasReplacementDecision.awaitFieldProgress(
-                    textBeforeInsertion: textBeforeInsertion, insertedText: insertedText, deleted: deleted,
-                    readField: { target.fieldState() })
+                guard let expectation else { return true }
+                let field = target.fieldState()
+                guard HaasReplacementDecision.fieldMatchesProgress(field, expectation: expectation, deleted: deleted)
                 else { return false }
-                // 読み直しで待った間の操作も見逃さない
-                return isSafe()
+                // まだ消す文字があるなら、次の Backspace がカーソルの後ろの文字まで消さないことを確かめる
+                return deleted >= deleteCount || !HaasReplacementDecision.backspaceMayDeleteBeyondCaret(field)
             },
-            pasteGuard: isSafe)
+            pasteGuard: { phase in
+                guard isSafe() else { return false }
+                switch phase {
+                case .beforeCommand, .beforeV:
+                    // ⌘ を押した後に選択範囲が変わると、貼り付けで既存の文を消すので、V の前にも確かめる
+                    guard let expectation else { return true }
+                    return HaasReplacementDecision.fieldMatchesProgress(
+                        target.fieldState(), expectation: expectation, deleted: deleteCount)
+                case .afterCommand:
+                    // 貼った分だけ中身が変わるので、入力先と見張りだけを確かめる
+                    return true
+                }
+            })
         logger.notice("correction phase=replace outcome=\(String(describing: outcome), privacy: .public) app=\(target.diagnosticAppIdentifier, privacy: .public)")
 
         guard outcome == .completed else {
@@ -277,8 +302,34 @@ final class HaasCorrectionCoordinator: ObservableObject {
         let newToken = monitor.isClean(for: token) ? monitor.startWatching() : nil
         carried = LastInput(
             sessionID: session.input.sessionID, transcriptionID: session.input.transcriptionID, text: corrected,
-            allSegmentsPosted: true, target: target, watchToken: newToken, forcedCopyReason: nil)
+            allSegmentsPosted: true, target: target, watchToken: newToken,
+            insertionBaseline: session.input.insertionBaseline, forcedCopyReason: nil)
         return .replaced
+    }
+
+    /// 消している途中の欄を、更新が追いつくまで少しの間だけ読み直して確かめる。
+    /// ブラウザなどでは Backspace の後しばらく前の中身を返すことがあるため、
+    /// 1つ前の段階 (deleted - 1) とちょうど一致する間だけ待つ。それ以外の中身はすぐに止める。
+    /// 期待どおりの中身とちょうど一致したときだけ true。待つのも読み直すのも MainActor の上で行う
+    static func awaitFieldProgress(
+        expectation: HaasFieldExpectation, deleted: Int,
+        readField: () -> HaasFieldState,
+        window: Duration = .milliseconds(150),
+        pollInterval: Duration = .milliseconds(10)
+    ) async -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: window)
+        while true {
+            let field = readField()
+            if HaasReplacementDecision.fieldMatchesProgress(field, expectation: expectation, deleted: deleted) {
+                return true
+            }
+            // deleted == 0 に前の段階はない。前の段階のまま以外は待たない
+            guard deleted > 0,
+                HaasReplacementDecision.fieldMatchesProgress(field, expectation: expectation, deleted: deleted - 1),
+                ContinuousClock.now < deadline, !Task.isCancelled
+            else { return false }
+            try? await Task.sleep(for: pollInterval)
+        }
     }
 
     /// 置き換えを完了しなかった経路の終わり。直した文をコピーし、次に開いたときは直した文から始める。
@@ -288,7 +339,8 @@ final class HaasCorrectionCoordinator: ObservableObject {
         if let input = session?.input {
             carried = LastInput(
                 sessionID: input.sessionID, transcriptionID: input.transcriptionID, text: corrected,
-                allSegmentsPosted: false, target: nil, watchToken: nil, forcedCopyReason: .alreadyCorrected,
+                allSegmentsPosted: false, target: nil, watchToken: nil, insertionBaseline: nil,
+                forcedCopyReason: .alreadyCorrected,
                 copyPending: !copied)
         }
         return copied ? .copied(message) : .failed(Self.copyFailedMessage)

@@ -177,15 +177,21 @@ struct HaasPasteTarget: HaasInputTargetChecking {
 }
 
 extension HaasFieldState {
-    /// AX の値と選択範囲 (UTF-16 の位置) から作る。範囲が値の外や Unicode スカラーの途中なら .unreadable
+    /// AX の値と選択範囲 (UTF-16 の位置) から作る。範囲が値の外や、範囲の始まり・終わりが
+    /// Unicode スカラーの途中なら .unreadable
     static func make(value: String, selectedRange: CFRange) -> HaasFieldState {
         let units = value.utf16.count
         guard selectedRange.location >= 0, selectedRange.length >= 0,
             selectedRange.location <= units, selectedRange.length <= units - selectedRange.location
         else { return .unreadable }
         let caret = String.Index(utf16Offset: selectedRange.location, in: value)
-        guard caret.samePosition(in: value.unicodeScalars) != nil else { return .unreadable }
-        return .readable(textBeforeCaret: String(value[..<caret]), selectionLength: selectedRange.length)
+        let selectionEnd = String.Index(utf16Offset: selectedRange.location + selectedRange.length, in: value)
+        guard caret.samePosition(in: value.unicodeScalars) != nil,
+            selectionEnd.samePosition(in: value.unicodeScalars) != nil
+        else { return .unreadable }
+        return .readable(
+            textBeforeCaret: String(value[..<caret]), textAfterCaret: String(value[selectionEnd...]),
+            selectionLength: selectedRange.length)
     }
 }
 
@@ -201,6 +207,8 @@ struct HaasDeliveredInput {
     let target: (any HaasInputTargetChecking)?
     /// この録音の開始で始めた見張りの印 (別の回の印は返さない)
     let watchToken: UUID?
+    /// この録音の最初の区切りを貼る直前の欄の状態。記録がなければ nil
+    let insertionBaseline: HaasInsertionBaseline?
 }
 
 @MainActor
@@ -227,6 +235,8 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
     private var watchSessionID: UUID?
     /// 再開で入力先を取り直した録音。前の入力先に入れた分は今の入力先にないので、置き換えに使わせない
     private var retargetedSessionID: UUID?
+    /// 録音の最初の区切りを貼る直前に読んだ欄の状態と、その録音
+    private var insertionBaseline: (sessionID: UUID, baseline: HaasInsertionBaseline)?
     private let captureTarget: @MainActor () -> (any HaasInputTargetChecking)?
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "HaasInputDelivery")
     private var loadFailure: Error?
@@ -260,7 +270,8 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
             sessionID: record.id, transcriptionID: record.transcriptionID, text: record.ledger.fullText,
             allSegmentsPosted: !segments.isEmpty && segments.allSatisfy { $0.disposition == .posted }
                 && retargetedSessionID != record.id,
-            target: target, watchToken: watchSessionID == record.id ? watchToken : nil)
+            target: target, watchToken: watchSessionID == record.id ? watchToken : nil,
+            insertionBaseline: insertionBaseline?.sessionID == record.id ? insertionBaseline?.baseline : nil)
     }
 
     private var nextReadySegment: HaasSegmentLedger.Segment? {
@@ -542,6 +553,19 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
                 var posting = self.state
                 posting.active?.ledger.setDisposition(.posting, for: segment.id)
                 guard self.save(posting) else { break }
+                // 最初の区切りを貼る直前の欄を記録する。訂正では、この中身に入れた文を足したものと
+                // ちょうど一致するときだけ消す (末尾が同じだけでは今回入れた証明にならない)
+                if self.insertionBaseline?.sessionID != recordID {
+                    let baseline: HaasInsertionBaseline
+                    switch target.fieldState() {
+                    case let .readable(textBeforeCaret, _, selectionLength) where selectionLength == 0:
+                        baseline = .readable(textBeforeInsertion: textBeforeCaret)
+                    case .readable, .unreadable:
+                        // 選択範囲があると貼り付けで消える文字があるので、読めなかったものとして扱う
+                        baseline = .unreadable
+                    }
+                    self.insertionBaseline = (recordID, baseline)
+                }
                 self.logger.notice("delivery phase=before-command session=\(recordID.uuidString, privacy: .public) segment=\(segment.id, privacy: .public) generation=\(drainGeneration.uuidString, privacy: .public) app=\(target.diagnosticAppIdentifier, privacy: .public)")
                 var guardFailure: String?
                 let outcome = await self.textPaster.paste(segment.text) { [weak self] in

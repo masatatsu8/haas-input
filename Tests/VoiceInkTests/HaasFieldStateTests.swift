@@ -6,12 +6,23 @@ final class HaasFieldStateTests: XCTestCase {
         let value = "前の文👩‍💻合って"
         let caret = ("前の文👩‍💻" as NSString).length
         let state = HaasFieldState.make(value: value, selectedRange: CFRange(location: caret, length: 0))
-        XCTAssertEqual(state, .readable(textBeforeCaret: "前の文👩‍💻", selectionLength: 0))
+        XCTAssertEqual(state, .readable(textBeforeCaret: "前の文👩‍💻", textAfterCaret: "合って", selectionLength: 0))
     }
 
     func testSelectionLengthIsReported() {
         let state = HaasFieldState.make(value: "abcdef", selectedRange: CFRange(location: 2, length: 3))
-        XCTAssertEqual(state, .readable(textBeforeCaret: "ab", selectionLength: 3))
+        // カーソルの後ろは選択範囲の後ろから
+        XCTAssertEqual(state, .readable(textBeforeCaret: "ab", textAfterCaret: "f", selectionLength: 3))
+    }
+
+    func testTextAfterCaretIsKeptForAutoClosedPair() {
+        let state = HaasFieldState.make(value: "f()", selectedRange: CFRange(location: 2, length: 0))
+        XCTAssertEqual(state, .readable(textBeforeCaret: "f(", textAfterCaret: ")", selectionLength: 0))
+    }
+
+    func testSelectionEndInsideSurrogatePairIsUnreadable() {
+        XCTAssertEqual(
+            HaasFieldState.make(value: "a💻b", selectedRange: CFRange(location: 0, length: 2)), .unreadable)
     }
 
     func testRangeBeyondValueIsUnreadable() {

@@ -1,12 +1,15 @@
 import AppKit
 import Foundation
 
-/// 前の文を消して直した文を貼る役と、クリップボードへコピーする役
+/// 前の文を消して直した文を貼る役と、クリップボードへコピーする役。
+/// 引数の意味は CursorPaster.startReplaceAtCursor と同じ
 @MainActor
 protocol HaasCorrectionReplacing {
     func replace(
-        _ text: String, deleteCount: Int, shouldContinue: @escaping (_ deleted: Int) async -> Bool,
-        pasteGuard: @escaping () -> Bool
+        _ text: String, deleteCount: Int,
+        awaitField: @escaping @MainActor (_ deleted: Int) async -> Bool,
+        shouldContinue: @escaping @MainActor (_ deleted: Int) -> Bool,
+        pasteGuard: @escaping @MainActor (CursorPaster.PastePhase) -> Bool
     ) async -> HaasReplaceOutcome
     func copy(_ text: String) -> Bool
 }
@@ -15,11 +18,14 @@ protocol HaasCorrectionReplacing {
 @MainActor
 struct HaasSystemCorrectionReplacer: HaasCorrectionReplacing {
     func replace(
-        _ text: String, deleteCount: Int, shouldContinue: @escaping (_ deleted: Int) async -> Bool,
-        pasteGuard: @escaping () -> Bool
+        _ text: String, deleteCount: Int,
+        awaitField: @escaping @MainActor (_ deleted: Int) async -> Bool,
+        shouldContinue: @escaping @MainActor (_ deleted: Int) -> Bool,
+        pasteGuard: @escaping @MainActor (CursorPaster.PastePhase) -> Bool
     ) async -> HaasReplaceOutcome {
         await CursorPaster.startReplaceAtCursor(
-            text, deleteCount: deleteCount, shouldContinue: shouldContinue, pasteGuard: pasteGuard
+            text, deleteCount: deleteCount, awaitField: awaitField, shouldContinue: shouldContinue,
+            pasteGuard: pasteGuard
         ).value
     }
 

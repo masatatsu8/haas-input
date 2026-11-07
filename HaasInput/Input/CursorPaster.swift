@@ -67,30 +67,39 @@ final class CursorPaster {
         }
     }
 
+    /// 貼り付けの確認をする時点。⌘ を押す前、V を押す前、⌘V を送り終えた後
+    enum PastePhase: Equatable {
+        case beforeCommand, beforeV, afterCommand
+    }
+
     /// 末尾の deleteCount 文字を Backspace で消してから text を貼る。既存の貼り付けと同じ列に並べる
-    /// - shouldContinue: Backspace の前ごと (deleted は消した数) と貼り付けの直前に呼ぶ。入力欄の中身の確認はここで行う
-    /// - pasteGuard: 貼り付け (⌘V の前・途中・後) だけで使う。貼ると中身が変わるため入力欄の中身は見ない
+    /// - awaitField: Backspace の前ごと (deleted は消した数) と貼り付けの前に呼ぶ。入力欄の更新が追いつくのを待ってよい
+    /// - shouldContinue: awaitField の後に呼ぶ同期の最後の確認。これが true を返してから Backspace の keyDown を
+    ///   送るまでは中断点を置かない
+    /// - pasteGuard: 貼り付け (⌘ の前・V の前・⌘V の後) で呼ぶ。⌘V の後は貼った分だけ中身が変わる
     /// - modifierFlags: 今押されている修飾キー。最初の Backspace の前に、⌘・⌥・⌃ が離れるのを待つのに使う
     @MainActor
     @discardableResult
     static func startReplaceAtCursor(
         _ text: String, deleteCount: Int,
-        shouldContinue: @escaping (_ deleted: Int) async -> Bool,
-        pasteGuard: @escaping () -> Bool,
+        awaitField: @escaping @MainActor (_ deleted: Int) async -> Bool,
+        shouldContinue: @escaping @MainActor (_ deleted: Int) -> Bool,
+        pasteGuard: @escaping @MainActor (PastePhase) -> Bool,
         modifierFlags: @escaping () -> CGEventFlags = { CGEventSource.flagsState(.combinedSessionState) }
     ) -> Task<HaasReplaceOutcome, Never> {
         enqueueSession {
             await performReplaceSession(
-                text, deleteCount: deleteCount, shouldContinue: shouldContinue, pasteGuard: pasteGuard,
-                modifierFlags: modifierFlags)
+                text, deleteCount: deleteCount, awaitField: awaitField, shouldContinue: shouldContinue,
+                pasteGuard: pasteGuard, modifierFlags: modifierFlags)
         }
     }
 
     @MainActor
     private static func performReplaceSession(
         _ text: String, deleteCount: Int,
-        shouldContinue: @escaping (_ deleted: Int) async -> Bool,
-        pasteGuard: @escaping () -> Bool,
+        awaitField: @escaping @MainActor (_ deleted: Int) async -> Bool,
+        shouldContinue: @escaping @MainActor (_ deleted: Int) -> Bool,
+        pasteGuard: @escaping @MainActor (PastePhase) -> Bool,
         modifierFlags: @escaping () -> CGEventFlags
     ) async -> (outcome: HaasReplaceOutcome, clipboardRestoreTask: Task<Void, Never>?) {
         // 削除より前に、元のクリップボードを保存して貼る文を準備する
@@ -99,49 +108,58 @@ final class CursorPaster {
         let ownsClipboard = clipboard.isStillOwned
         await wait(prePasteDelay)
 
-        let pasteRejection: () -> PasteResult? = {
+        let pasteRejection: @MainActor (PastePhase) -> PasteResult? = { phase in
             guard ownsClipboard() else { return .clipboardChanged }
-            return pasteGuard() ? nil : .commandNotPosted
+            return pasteGuard(phase) ? nil : .commandNotPosted
         }
+        let backspace = BackspacePoster()
         let outcome = await runReplacement(
             deleteCount: deleteCount,
             beforeFirstBackspace: { await waitForModifiersReleased(flags: modifierFlags) },
-            // Backspace の前ごとに、クリップボードがこのセッションのままかも確かめる。
-            // 入力欄の確認は読み直しで待つことがあるので、待った後にもう一度確かめる
-            shouldContinue: { deleted in
-                guard ownsClipboard() else { return false }
-                guard await shouldContinue(deleted) else { return false }
-                return ownsClipboard()
-            },
-            postBackspace: { await postBackspace() },
+            awaitField: awaitField,
+            // Backspace の前ごとに、クリップボードがこのセッションのままかも確かめる
+            shouldContinue: { deleted in ownsClipboard() && shouldContinue(deleted) },
+            postBackspaceDown: { backspace.postDown() },
+            finishBackspace: { await backspace.finish() },
             paste: { await pasteFromClipboard(sessionID: sessionID, pasteRejection: pasteRejection) }
         )
         logger.notice("Replace id=\(sessionID, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
         return (outcome, clipboard.scheduleRestore())
     }
 
-    /// 消す手順の本体。Backspace の前ごと、貼り付けの直前に shouldContinue で止められる。貼り付けの後は確認しない
+    /// 消す手順の本体。Backspace の前ごと、貼り付けの直前に awaitField と shouldContinue で止められる。
+    /// 貼り付けの後は確認しない。すべて MainActor の上で動き、shouldContinue が true を返してから
+    /// Backspace の keyDown を送るまでの間に中断点はない (その間に利用者の操作やフォーカスの変更を挟まない)
     /// - beforeFirstBackspace: 消す文字があるとき、最初の確認の前に1度だけ呼ぶ。false なら何も消さずに止める
+    /// - postBackspaceDown: Backspace の keyDown を同期で送る。送れなければ false
+    /// - finishBackspace: keyDown を送った後に、待ってから keyUp を送る
+    @MainActor
     static func runReplacement(
         deleteCount: Int,
-        beforeFirstBackspace: () async -> Bool = { true },
-        shouldContinue: (_ deleted: Int) async -> Bool,
-        postBackspace: () async -> Bool,
-        paste: () async -> PasteResult
+        beforeFirstBackspace: @MainActor () async -> Bool = { true },
+        awaitField: @MainActor (_ deleted: Int) async -> Bool = { _ in true },
+        shouldContinue: @MainActor (_ deleted: Int) -> Bool,
+        postBackspaceDown: @MainActor () -> Bool,
+        finishBackspace: @MainActor () async -> Void = {},
+        paste: @MainActor () async -> PasteResult
     ) async -> HaasReplaceOutcome {
+        func stopped(_ deleted: Int) -> HaasReplaceOutcome {
+            deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted)
+        }
         // 待つ間に入力欄が変わりうるので、待ってから最初の確認をする
         if deleteCount > 0, !(await beforeFirstBackspace()) { return .notStarted }
         var deleted = 0
         while deleted < deleteCount {
-            guard await shouldContinue(deleted) else {
-                return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted)
-            }
-            guard await postBackspace() else { return .deletionInterrupted(deleted: deleted) }
+            // 待つのはここまで。最後の確認から keyDown の送信までは await を挟まない
+            guard await awaitField(deleted) else { return stopped(deleted) }
+            guard shouldContinue(deleted) else { return stopped(deleted) }
+            guard postBackspaceDown() else { return .deletionInterrupted(deleted: deleted) }
             deleted += 1
+            await finishBackspace()
         }
-        guard await shouldContinue(deleted) else {
-            return deleted == 0 ? .notStarted : .deletionInterrupted(deleted: deleted)
-        }
+        guard await awaitField(deleted) else { return stopped(deleted) }
+        guard shouldContinue(deleted) else { return stopped(deleted) }
+        // 貼り付けは ⌘ を送る直前にも pasteGuard で確かめる
         return await paste() == .commandPosted ? .completed : .pasteUncertain
     }
 
@@ -166,23 +184,33 @@ final class CursorPaster {
         }
     }
 
-    /// Backspace (keyCode 0x33) を1回送る。印を付けて、利用者の操作と区別できるようにする
+    /// Backspace (keyCode 0x33) を送る役。keyDown は同期で送り、keyUp は待ってから送る。
+    /// 印を付けて、利用者の操作と区別できるようにする
     @MainActor
-    private static func postBackspace() async -> Bool {
-        guard AXIsProcessTrusted() else { return false }
-        let source = CGEventSource(stateID: .privateState)
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0x33, keyDown: true),
-            let up = CGEvent(keyboardEventSource: source, virtualKey: 0x33, keyDown: false)
-        else { return false }
-        for event in [down, up] {
-            event.flags = []
-            event.setIntegerValueField(.eventSourceUserData, value: HaasSyntheticInput.marker)
+    private final class BackspacePoster {
+        private var pendingUp: CGEvent?
+
+        func postDown() -> Bool {
+            guard AXIsProcessTrusted() else { return false }
+            let source = CGEventSource(stateID: .privateState)
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0x33, keyDown: true),
+                let up = CGEvent(keyboardEventSource: source, virtualKey: 0x33, keyDown: false)
+            else { return false }
+            for event in [down, up] {
+                event.flags = []
+                event.setIntegerValueField(.eventSourceUserData, value: HaasSyntheticInput.marker)
+            }
+            down.post(tap: .cghidEventTap)
+            pendingUp = up
+            return true
         }
-        down.post(tap: .cghidEventTap)
-        await wait(pasteShortcutEventDelay)
-        up.post(tap: .cghidEventTap)
-        await wait(pasteShortcutEventDelay)
-        return true
+
+        func finish() async {
+            await CursorPaster.wait(CursorPaster.pasteShortcutEventDelay)
+            pendingUp?.post(tap: .cghidEventTap)
+            pendingUp = nil
+            await CursorPaster.wait(CursorPaster.pasteShortcutEventDelay)
+        }
     }
 
     @MainActor
@@ -198,13 +226,14 @@ final class CursorPaster {
         let sessionID = clipboard.sessionID
         await wait(prePasteDelay)
 
-        let pasteRejection: () -> PasteResult? = {
+        // 通常の貼り付けは、どの時点でも同じ確認をする
+        let pasteRejection: @MainActor (PastePhase) -> PasteResult? = { _ in
             guard clipboard.isStillOwned() else { return .clipboardChanged }
             return shouldPaste() ? nil : .commandNotPosted
         }
         let appIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "unknown"
         let result: PasteResult
-        if let rejection = pasteRejection() {
+        if let rejection = pasteRejection(.beforeCommand) {
             logger.notice("Paste guard id=\(sessionID, privacy: .public) phase=after-preparation reason=\(String(describing: rejection), privacy: .public)")
             result = rejection
         } else {
@@ -320,7 +349,9 @@ final class CursorPaster {
 
     // Posts Cmd+V via CGEvent without modifying the active input source.
     @MainActor
-    private static func pasteFromClipboard(sessionID: String, pasteRejection: () -> PasteResult?) async -> PasteResult {
+    private static func pasteFromClipboard(
+        sessionID: String, pasteRejection: @MainActor (PastePhase) -> PasteResult?
+    ) async -> PasteResult {
         guard AXIsProcessTrusted() else {
             logger.error("Accessibility permission is required to paste with simulated key events id=\(sessionID, privacy: .public)")
             return .commandNotPosted
@@ -346,25 +377,52 @@ final class CursorPaster {
             event.setIntegerValueField(.eventSourceUserData, value: HaasSyntheticInput.marker)
         }
 
-        if let rejection = pasteRejection() {
-            logger.notice("Paste guard id=\(sessionID, privacy: .public) phase=before-command reason=\(String(describing: rejection), privacy: .public)")
-            return rejection
-        }
-        cmdDown.post(tap: .cghidEventTap)
-        await wait(pasteShortcutEventDelay)
-        if let rejection = pasteRejection() {
-            logger.notice("Paste guard id=\(sessionID, privacy: .public) phase=before-V reason=\(String(describing: rejection), privacy: .public)")
-            cmdUp.post(tap: .cghidEventTap)
-            return rejection
-        }
-        vDown.post(tap: .cghidEventTap)
-        await wait(pasteShortcutEventDelay)
-        vUp.post(tap: .cghidEventTap)
-        await wait(pasteShortcutEventDelay)
-        cmdUp.post(tap: .cghidEventTap)
+        return await runPasteCommand(
+            pasteRejection: pasteRejection,
+            post: { key in
+                switch key {
+                case .commandDown: cmdDown.post(tap: .cghidEventTap)
+                case .vDown: vDown.post(tap: .cghidEventTap)
+                case .vUp: vUp.post(tap: .cghidEventTap)
+                case .commandUp: cmdUp.post(tap: .cghidEventTap)
+                }
+            },
+            onRejected: { phase, rejection in
+                logger.notice("Paste guard id=\(sessionID, privacy: .public) phase=\(String(describing: phase), privacy: .public) reason=\(String(describing: rejection), privacy: .public)")
+            })
+    }
 
-        if let rejection = pasteRejection() {
-            logger.notice("Paste guard id=\(sessionID, privacy: .public) phase=after-command reason=\(String(describing: rejection), privacy: .public)")
+    enum PasteKey: Equatable {
+        case commandDown, vDown, vUp, commandUp
+    }
+
+    /// ⌘V を送る手順。⌘ の前と V の前に確かめ、確認の後は await を挟まずにキーを送る。
+    /// V の前に止めたときは ⌘ を離してから返す
+    @MainActor
+    static func runPasteCommand(
+        pasteRejection: @MainActor (PastePhase) -> PasteResult?,
+        post: @MainActor (PasteKey) -> Void,
+        onRejected: @MainActor (PastePhase, PasteResult) -> Void = { _, _ in }
+    ) async -> PasteResult {
+        if let rejection = pasteRejection(.beforeCommand) {
+            onRejected(.beforeCommand, rejection)
+            return rejection
+        }
+        post(.commandDown)
+        await wait(pasteShortcutEventDelay)
+        if let rejection = pasteRejection(.beforeV) {
+            onRejected(.beforeV, rejection)
+            post(.commandUp)
+            return rejection
+        }
+        post(.vDown)
+        await wait(pasteShortcutEventDelay)
+        post(.vUp)
+        await wait(pasteShortcutEventDelay)
+        post(.commandUp)
+
+        if let rejection = pasteRejection(.afterCommand) {
+            onRejected(.afterCommand, rejection)
             return .commandPartiallyPosted
         }
         return .commandPosted

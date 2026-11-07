@@ -46,6 +46,68 @@ final class HaasInputDeliveryTests: XCTestCase {
         XCTAssertEqual(afterFailure.watchToken, firstToken)
     }
 
+    func testRecordsFieldOnlyBeforeFirstPaste() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let target = ReadableInputTarget(text: "前の文。")
+        fixture.paster.onStarted = { [paster = fixture.paster] in target.text += paster.calls.last?.text ?? "" }
+        let session = UUID()
+        try await fixture.delivery.begin(sessionID: session, target: target)
+        fixture.delivery.accept(sessionID: session, itemID: "item-1", text: "前半、")
+        fixture.delivery.accept(sessionID: session, itemID: "item-2", text: "後半。")
+        await fixture.delivery.finish(sessionID: session)
+
+        let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertEqual(target.text, "前の文。前半、後半。")
+        // 2つ目の区切りの前には読み直さない
+        XCTAssertEqual(input.insertionBaseline, .readable(textBeforeInsertion: "前の文。"))
+        XCTAssertEqual(target.reads, 1)
+
+        // 次の録音では、その録音の最初の貼り付けの前に読み直す
+        let next = UUID()
+        try await fixture.delivery.begin(sessionID: next, target: target)
+        fixture.delivery.accept(sessionID: next, itemID: "item-1", text: "次。")
+        await fixture.delivery.finish(sessionID: next)
+        XCTAssertEqual(
+            fixture.delivery.lastDeliveredInput?.insertionBaseline,
+            .readable(textBeforeInsertion: "前の文。前半、後半。"))
+    }
+
+    func testFieldWithSelectionBeforePasteIsRecordedAsUnreadable() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let target = ReadableInputTarget(text: "前の文。")
+        target.selectionLength = 2
+        let session = UUID()
+        try await fixture.delivery.begin(sessionID: session, target: target)
+        fixture.delivery.accept(sessionID: session, itemID: "item-1", text: "はい")
+        await fixture.delivery.finish(sessionID: session)
+        XCTAssertEqual(fixture.delivery.lastDeliveredInput?.insertionBaseline, .unreadable)
+    }
+
+    func testIgnoredPasteIntoFieldEndingWithSameTextIsNotReplaced() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        // 文字数の上限で貼り付けが無視される欄。元から「はい」で終わっている
+        let target = ReadableInputTarget(text: "はい")
+        let session = UUID()
+        try await fixture.delivery.begin(sessionID: session, target: target)
+        fixture.delivery.accept(sessionID: session, itemID: "item-1", text: "はい")
+        await fixture.delivery.finish(sessionID: session)
+        XCTAssertEqual(fixture.delivery.lastDeliveredInput?.allSegmentsPosted, true)
+
+        let schema = Schema([Transcription.self, WordReplacement.self])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let coordinator = HaasCorrectionCoordinator(
+            delivery: fixture.delivery, monitor: fixture.monitor, replacer: HaasSystemCorrectionReplacer(),
+            settings: HaasSettingsStore(defaults: fixture.defaults), modelContext: container.mainContext,
+            isIdle: { true }, captureReturnTarget: { nil }, waitForFocus: { _ in })
+        let draft = try XCTUnwrap(coordinator.begin())
+        XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
+    }
+
     func testLastDeliveredInputIsNotAllPostedWhenHeldOrEmpty() async throws {
         let fixture = try DeliveryFixture()
         defer { fixture.cleanUp() }
@@ -549,6 +611,21 @@ private final class DeliveryFixture {
 private struct AvailableInputTarget: HaasInputTargetChecking {
     let diagnosticAppIdentifier = "test.destination"
     func rejectionReason() -> String? { nil }
+}
+
+/// カーソルが末尾にある、中身を読める入力先
+@MainActor
+private final class ReadableInputTarget: HaasInputTargetChecking {
+    let diagnosticAppIdentifier = "test.readable"
+    var text: String
+    var selectionLength = 0
+    private(set) var reads = 0
+    init(text: String) { self.text = text }
+    func rejectionReason() -> String? { nil }
+    func fieldState() -> HaasFieldState {
+        reads += 1
+        return .readable(textBeforeCaret: text, textAfterCaret: "", selectionLength: selectionLength)
+    }
 }
 
 @MainActor
