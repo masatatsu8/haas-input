@@ -225,17 +225,19 @@ final class HaasHeldPeriodSessionTests: XCTestCase {
         await waitUntil { generator.requests.count == 1 }
         try generator.complete(index: 0, result: .success("資料です。"))
         await waitUntil { fixture.paster.calls.count == 1 }
-        session.receive(.committed(id: "b", text: "それで"))
+        session.receive(.committed(id: "b", text: "それで次です"))
         await waitUntil { generator.requests.count == 2 }
         try fixture.breakStorageDirectory()
-        try generator.complete(index: 1, result: .success("それで。"))
+        // 整形の結果は accept 時の文 (「。それで次です」) と違うので、整形の完了で保存を試みて失敗する
+        try generator.complete(index: 1, result: .success("それで、次です。"))
         await waitUntil { fixture.delivery.hasUnsavedRecovery }
 
-        XCTAssertEqual(session.recognizedText, "資料です。それで")
+        // completeHeldFormatting が false なので、整形の結果も b の「。」の保留も採らない
+        XCTAssertEqual(fixture.delivery.ledger.segments.last?.text, "。それで次です")
+        XCTAssertEqual(session.recognizedText, "資料です。それで次です")
         XCTAssertEqual(fixture.delivery.ledger.fullText, session.recognizedText)
-        // completeHeldFormatting が false なので、b の「。」は保留せず、終わりにも足さない
         let text = try await session.finishAfterRecognition()
-        XCTAssertEqual(text, "資料です。それで")
+        XCTAssertEqual(text, "資料です。それで次です", "終わりに「。」を足さない")
         XCTAssertEqual(fixture.delivery.ledger.fullText, text)
         XCTAssertEqual(fixture.paster.calls.map(\.text), ["資料です"])
     }
