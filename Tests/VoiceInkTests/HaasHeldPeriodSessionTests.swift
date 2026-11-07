@@ -74,7 +74,7 @@ final class HaasHeldPeriodSessionTests: XCTestCase {
 
     func testSegmentArrivingDuringFormattingDecidesThatSegmentsPeriod() async throws {
         let cases: [(next: String, calls: [String])] = [
-            ("次も見ます", ["資料です。", "次も見ます"]),
+            ("次も見ます", ["資料です。", "次も見ます", "。"]),
             ("けど続けます。", ["資料です", "けど続けます", "。"]),
         ]
         for mode in [HaasPunctuationMode.natural, .proofread] {
@@ -117,8 +117,9 @@ final class HaasHeldPeriodSessionTests: XCTestCase {
             try generator.complete(index: 0, result: .success("資料です。"))
 
             let text = try await session.finishAfterRecognition()
-            // 止めた後の整形は台帳に入らないので、a は受け渡した文のまま。b の「。」だけ末尾に1つ入る
-            XCTAssertEqual(text, "資料です続けます。", "\(mode)")
+            // 止めた後の整形は台帳に入らないので、a は受け渡した文 (速度優先の規則を当てたもの) のまま。
+            // b の「。」だけ末尾に1つ入る
+            XCTAssertEqual(text, "資料です。続けます。", "\(mode)")
             XCTAssertEqual(fixture.delivery.ledger.fullText, text, "\(mode)")
             XCTAssertEqual(fixture.delivery.pendingText, text, "\(mode)")
             XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, text, "\(mode)")
@@ -141,14 +142,15 @@ final class HaasHeldPeriodSessionTests: XCTestCase {
         await waitUntil { generator.requests.count == 2 }
         session.cancel()
 
-        XCTAssertEqual(session.recognizedText, "資料です。それで次です")
+        XCTAssertEqual(session.recognizedText, "資料です。それで次です。")
         XCTAssertEqual(fixture.delivery.ledger.fullText, session.recognizedText)
         do {
             _ = try await session.finishAfterRecognition()
             XCTFail("取り消した録音は終えられない")
         } catch {}
-        XCTAssertEqual(fixture.delivery.ledger.fullText, "資料です。それで次です")
+        XCTAssertEqual(fixture.delivery.ledger.fullText, "資料です。それで次です。")
         XCTAssertEqual(fixture.paster.calls.map(\.text), ["資料です"])
+        XCTAssertEqual(session.punctuationRoutes["b"], .cancelled)
     }
 
     func testCancelInFastModeDropsTheHeldPeriod() async throws {
@@ -182,10 +184,11 @@ final class HaasHeldPeriodSessionTests: XCTestCase {
 
         XCTAssertTrue(fixture.delivery.hasUnsavedRecovery)
         XCTAssertEqual(generator.requests.count, 1)
-        XCTAssertEqual(session.recognizedText, "資料です。それで次です")
+        XCTAssertEqual(session.punctuationRoutes["b"], .notAccepted)
+        XCTAssertEqual(session.recognizedText, "資料です。それで次です。")
         XCTAssertEqual(fixture.delivery.ledger.fullText, session.recognizedText)
         let text = try await session.finishAfterRecognition()
-        XCTAssertEqual(text, "資料です。それで次です")
+        XCTAssertEqual(text, "資料です。それで次です。")
         XCTAssertEqual(fixture.delivery.ledger.fullText, text)
     }
 
@@ -228,23 +231,136 @@ final class HaasHeldPeriodSessionTests: XCTestCase {
         session.receive(.committed(id: "b", text: "それで次です"))
         await waitUntil { generator.requests.count == 2 }
         try fixture.breakStorageDirectory()
-        // 整形の結果は accept 時の文 (「。それで次です」) と違うので、整形の完了で保存を試みて失敗する
+        // 整形の結果は accept 時の文 (「。それで次です。」) と違うので、整形の完了で保存を試みて失敗する
         try generator.complete(index: 1, result: .success("それで、次です。"))
         await waitUntil { fixture.delivery.hasUnsavedRecovery }
 
         // completeHeldFormatting が false なので、整形の結果も b の「。」の保留も採らない
-        XCTAssertEqual(fixture.delivery.ledger.segments.last?.text, "。それで次です")
-        XCTAssertEqual(session.recognizedText, "資料です。それで次です")
+        XCTAssertEqual(fixture.delivery.ledger.segments.last?.text, "。それで次です。")
+        XCTAssertEqual(session.recognizedText, "資料です。それで次です。")
         XCTAssertEqual(fixture.delivery.ledger.fullText, session.recognizedText)
         let text = try await session.finishAfterRecognition()
-        XCTAssertEqual(text, "資料です。それで次です", "終わりに「。」を足さない")
+        XCTAssertEqual(text, "資料です。それで次です。", "終わりにもう1つ「。」を足さない")
         XCTAssertEqual(fixture.delivery.ledger.fullText, text)
+        XCTAssertEqual(session.punctuationRoutes["b"], .notApplied, "検証を通っても台帳に入らなければ、使えたとは残さない")
         XCTAssertEqual(fixture.paster.calls.map(\.text), ["資料です"])
     }
 
-    private func worker(for mode: HaasPunctuationMode, _ generator: ControlledPunctuationGenerator) -> HaasPunctuationWorker {
-        guard mode == .proofread else { return HaasPunctuationWorker(generator: generator) }
-        return HaasPunctuationWorker(generator: generator, timeout: .seconds(2)) { candidate, original, terms in
+    /// AI の結果を使えない区切りにも、速度優先の規則で「。」「？」を補う。「。」は #12 の規則で保留する
+    func testUnusableFormattingFallsBackToFastRules() async throws {
+        let routes: [HaasPunctuationRoute] = [.timedOut, .rejected, .failed, .unavailable]
+        let cases: [(text: String, calls: [String])] = [
+            ("資料です", ["資料です", "。"]),
+            ("確認できますか", ["確認できますか？"]),
+        ]
+        for mode in [HaasPunctuationMode.natural, .proofread] {
+            for route in routes {
+                for item in cases {
+                    let label = "\(mode) \(route) \(item.text)"
+                    let fixture = try DeliveryFixture()
+                    let generator = ControlledPunctuationGenerator()
+                    if route == .unavailable { generator.unavailableReason = "使えません" }
+                    let timeout: Duration = route == .timedOut ? .milliseconds(100) : .seconds(2)
+                    let session = try makeSession(fixture, mode: mode, worker: worker(for: mode, generator, timeout: timeout))
+                    defer { session.cancel(); generator.cancelPending(); fixture.cleanUp() }
+                    try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
+
+                    session.receive(.committed(id: "a", text: item.text))
+                    switch route {
+                    case .rejected:
+                        await waitUntil { generator.requests.count == 1 }
+                        try generator.complete(index: 0, result: .success("XYZ" + item.text))
+                    case .failed:
+                        await waitUntil { generator.requests.count == 1 }
+                        try generator.complete(index: 0, result: .failure(FallbackTestError.failed))
+                    default:
+                        break
+                    }
+                    await waitUntil { fixture.paster.calls.count == 1 }
+                    XCTAssertEqual(session.punctuationRoutes["a"], route, label)
+
+                    let text = try await session.finishAfterRecognition()
+                    XCTAssertEqual(fixture.paster.calls.map(\.text), item.calls, label)
+                    XCTAssertEqual(text, item.calls.joined(), label)
+                    XCTAssertEqual(fixture.delivery.ledger.fullText, text, label)
+                }
+            }
+        }
+    }
+
+    func testSegmentArrivingDuringFormattingGetsFastRules() async throws {
+        let cases: [(next: String, calls: [String])] = [
+            ("確認できますか", ["資料です。", "確認できますか？"]),
+            ("次も見ます", ["資料です。", "次も見ます", "。"]),
+        ]
+        for mode in [HaasPunctuationMode.natural, .proofread] {
+            for item in cases {
+                let label = "\(mode) \(item.next)"
+                let fixture = try DeliveryFixture()
+                let generator = ControlledPunctuationGenerator()
+                let session = try makeSession(fixture, mode: mode, worker: worker(for: mode, generator))
+                defer { session.cancel(); generator.cancelPending(); fixture.cleanUp() }
+                try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
+
+                session.receive(.committed(id: "a", text: "資料です"))
+                await waitUntil { generator.requests.count == 1 }
+                session.receive(.committed(id: "b", text: item.next))
+                XCTAssertEqual(session.punctuationRoutes["b"], .skippedWhileFormatting, label)
+                try generator.complete(index: 0, result: .success("資料です。"))
+                await waitUntil { fixture.paster.calls.count == 2 }
+                XCTAssertEqual(session.punctuationRoutes["a"], .formatted, label)
+
+                let text = try await session.finishAfterRecognition()
+                XCTAssertEqual(generator.requests.count, 1, label)
+                XCTAssertEqual(fixture.paster.calls.map(\.text), item.calls, label)
+                XCTAssertEqual(text, item.calls.joined(), label)
+                XCTAssertEqual(fixture.delivery.ledger.fullText, text, label)
+            }
+        }
+    }
+
+    /// 前の区切りが「。」を保留しているところに、AI の結果を使えない区切りが来る
+    func testFallbackSegmentResolvesThePreviousHeldPeriod() async throws {
+        let cases: [(next: String, calls: [String])] = [
+            ("そうです", ["資料です", "。そうです", "。"]),
+            ("けど次です", ["資料です", "けど次です", "。"]),
+            ("確認できますか", ["資料です", "。確認できますか？"]),
+        ]
+        for mode in [HaasPunctuationMode.natural, .proofread] {
+            for item in cases {
+                let label = "\(mode) \(item.next)"
+                let fixture = try DeliveryFixture()
+                let generator = ControlledPunctuationGenerator()
+                let session = try makeSession(fixture, mode: mode, worker: worker(for: mode, generator))
+                defer { session.cancel(); generator.cancelPending(); fixture.cleanUp() }
+                try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
+
+                session.receive(.committed(id: "a", text: "資料です"))
+                await waitUntil { generator.requests.count == 1 }
+                try generator.complete(index: 0, result: .success("資料です。"))
+                await waitUntil { fixture.paster.calls.count == 1 }
+
+                session.receive(.committed(id: "b", text: item.next))
+                await waitUntil { generator.requests.count == 2 }
+                XCTAssertEqual(generator.requests.last, item.next, label)
+                try generator.complete(index: 1, result: .success("XYZ" + item.next))
+                await waitUntil { fixture.paster.calls.count == 2 }
+                XCTAssertEqual(session.punctuationRoutes, ["a": .formatted, "b": .rejected], label)
+
+                let text = try await session.finishAfterRecognition()
+                XCTAssertEqual(fixture.paster.calls.map(\.text), item.calls, label)
+                XCTAssertEqual(text, item.calls.joined(), label)
+                XCTAssertEqual(fixture.delivery.ledger.fullText, text, label)
+                XCTAssertEqual(fixture.delivery.lastDeliveredInput?.text, text, label)
+            }
+        }
+    }
+
+    private func worker(
+        for mode: HaasPunctuationMode, _ generator: ControlledPunctuationGenerator, timeout: Duration = .seconds(2)
+    ) -> HaasPunctuationWorker {
+        guard mode == .proofread else { return HaasPunctuationWorker(generator: generator, timeout: timeout) }
+        return HaasPunctuationWorker(generator: generator, timeout: timeout) { candidate, original, terms in
             HaasProofreadValidator.validatedCandidate(candidate, preserving: original, protectedTerms: terms)
         }
     }
@@ -269,3 +385,5 @@ final class HaasHeldPeriodSessionTests: XCTestCase {
         XCTAssertTrue(condition())
     }
 }
+
+private enum FallbackTestError: Error { case failed }

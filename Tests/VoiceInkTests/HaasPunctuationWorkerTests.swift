@@ -11,7 +11,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         let firstStarted = expectation(description: "First native request started")
         let firstCompleted = expectation(description: "First completion")
         generator.onStarted = { _ in firstStarted.fulfill() }
-        var firstResults: [String?] = []
+        var firstResults: [HaasPunctuationOutcome] = []
         XCTAssertTrue(worker.submit("最初です", requestID: UUID()) {
             firstResults.append($0)
             firstCompleted.fulfill()
@@ -24,12 +24,12 @@ final class HaasPunctuationWorkerTests: XCTestCase {
 
         try generator.complete(index: 0, result: .success("最初です。"))
         await fulfillment(of: [firstCompleted], timeout: 1)
-        XCTAssertEqual(firstResults, ["最初です。"])
+        XCTAssertEqual(firstResults, [.formatted("最初です。")])
 
         let nextStarted = expectation(description: "Next native request started")
         let nextCompleted = expectation(description: "Next completion")
         generator.onStarted = { _ in nextStarted.fulfill() }
-        var nextResults: [String?] = []
+        var nextResults: [HaasPunctuationOutcome] = []
         XCTAssertTrue(worker.submit("次です", requestID: UUID()) {
             nextResults.append($0)
             nextCompleted.fulfill()
@@ -37,7 +37,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         await fulfillment(of: [nextStarted], timeout: 1)
         try generator.complete(index: 1, result: .success("次です。"))
         await fulfillment(of: [nextCompleted], timeout: 1)
-        XCTAssertEqual(nextResults, ["次です。"])
+        XCTAssertEqual(nextResults, [.formatted("次です。")])
         XCTAssertEqual(generator.requests, ["最初です", "次です"])
     }
 
@@ -50,13 +50,13 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         let exited = expectation(description: "Cancelled native work eventually exits")
         generator.onStarted = { _ in started.fulfill() }
         generator.onExited = { _ in exited.fulfill() }
-        var results: [String?] = []
+        var results: [HaasPunctuationOutcome] = []
         XCTAssertTrue(worker.submit("待っています", requestID: UUID()) {
             results.append($0)
             expired.fulfill()
         })
         await fulfillment(of: [started, expired], timeout: 1)
-        XCTAssertEqual(results, [nil])
+        XCTAssertEqual(results, [.timedOut])
         XCTAssertFalse(worker.submit("重ねません", requestID: UUID()) { _ in
             XCTFail("Timeout must not make unfinished native work disappear")
         })
@@ -65,20 +65,20 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         try generator.complete(index: 0, result: .success("待っています。"))
         await fulfillment(of: [exited], timeout: 1)
         XCTAssertEqual(generator.cancelledAtExit[0], true)
-        XCTAssertEqual(results, [nil], "A late native result must not complete a timed-out request twice")
+        XCTAssertEqual(results, [.timedOut], "A late native result must not complete a timed-out request twice")
 
         generator.onExited = nil
         let nextStarted = expectation(description: "Slot reused after actual exit")
         let nextCompleted = expectation(description: "Next request completes")
         generator.onStarted = { _ in nextStarted.fulfill() }
-        XCTAssertTrue(worker.submit("再開します", requestID: UUID()) { candidate in
-            XCTAssertEqual(candidate, "再開します。")
+        XCTAssertTrue(worker.submit("再開します", requestID: UUID()) { outcome in
+            XCTAssertEqual(outcome, .formatted("再開します。"))
             nextCompleted.fulfill()
         })
         await fulfillment(of: [nextStarted], timeout: 1)
         try generator.complete(index: 1, result: .success("再開します。"))
         await fulfillment(of: [nextCompleted], timeout: 1)
-        XCTAssertEqual(results, [nil])
+        XCTAssertEqual(results, [.timedOut])
     }
 
     func testCancelSuppressesLateCompletionWithoutCancellingTheNextRequest() async throws {
@@ -90,7 +90,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         let exited = expectation(description: "Old native request exits")
         generator.onStarted = { _ in started.fulfill() }
         generator.onExited = { _ in exited.fulfill() }
-        var oldResults: [String?] = []
+        var oldResults: [HaasPunctuationOutcome] = []
         XCTAssertTrue(worker.submit("取り消します", requestID: oldID) { oldResults.append($0) })
         await fulfillment(of: [started], timeout: 1)
         worker.cancel(requestID: oldID)
@@ -108,7 +108,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         let nextStarted = expectation(description: "New request started")
         let nextCompleted = expectation(description: "New completion survives stale cancellation")
         generator.onStarted = { _ in nextStarted.fulfill() }
-        var nextResults: [String?] = []
+        var nextResults: [HaasPunctuationOutcome] = []
         XCTAssertTrue(worker.submit("今回です", requestID: UUID()) {
             nextResults.append($0)
             nextCompleted.fulfill()
@@ -117,7 +117,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         worker.cancel(requestID: oldID)
         try generator.complete(index: 1, result: .success("今回です。"))
         await fulfillment(of: [nextCompleted], timeout: 1)
-        XCTAssertEqual(nextResults, ["今回です。"])
+        XCTAssertEqual(nextResults, [.formatted("今回です。")])
         XCTAssertEqual(generator.cancelledAtExit[1], false)
         XCTAssertTrue(oldResults.isEmpty)
     }
@@ -140,13 +140,15 @@ final class HaasPunctuationWorkerTests: XCTestCase {
             await Task.yield()
             XCTAssertEqual(completions, 0, item.name)
             XCTAssertTrue(item.generator?.requests.isEmpty ?? true, item.name)
+            let expected: HaasPunctuationRoute = item.name == "expired before admission" ? .timedOut : .unavailable
+            XCTAssertEqual(worker.declinedRoute(receivedAt: item.receivedAt), expected, item.name)
         }
     }
 
     func testInvalidOutputAndGenerationErrorRequestFallback() async throws {
-        let cases: [(name: String, result: Result<String, Error>)] = [
-            ("changed name", .success("JIHAN は3台です。")),
-            ("generation failed", .failure(InjectedGenerationError.failed)),
+        let cases: [(name: String, result: Result<String, Error>, outcome: HaasPunctuationOutcome)] = [
+            ("changed name", .success("JIHAN は3台です。"), .rejected),
+            ("generation failed", .failure(InjectedGenerationError.failed), .failed),
         ]
         for item in cases {
             let generator = ControlledPunctuationGenerator()
@@ -155,7 +157,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
             let started = expectation(description: item.name + " started")
             let completed = expectation(description: item.name + " fallback")
             generator.onStarted = { _ in started.fulfill() }
-            var results: [String?] = []
+            var results: [HaasPunctuationOutcome] = []
             XCTAssertTrue(worker.submit("JiHAN は3台です", requestID: UUID()) {
                 results.append($0)
                 completed.fulfill()
@@ -163,7 +165,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
             await fulfillment(of: [started], timeout: 1)
             try generator.complete(index: 0, result: item.result)
             await fulfillment(of: [completed], timeout: 1)
-            XCTAssertEqual(results, [nil], item.name)
+            XCTAssertEqual(results, [item.outcome], item.name)
         }
     }
 
@@ -172,7 +174,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         defer { generator.cancelPending() }
         let worker = HaasPunctuationWorker(generator: generator, timeout: .milliseconds(40))
         let completed = expectation(description: "Expired queued request falls back")
-        var results: [String?] = []
+        var results: [HaasPunctuationOutcome] = []
         XCTAssertTrue(worker.submit("遅れて届きます", requestID: UUID()) {
             results.append($0)
             completed.fulfill()
@@ -180,7 +182,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         occupyCurrentActor(for: 0.08)
         await fulfillment(of: [completed], timeout: 1)
         XCTAssertTrue(generator.requests.isEmpty, "An expired queued request must not start the model")
-        XCTAssertEqual(results, [nil])
+        XCTAssertEqual(results, [.timedOut])
     }
 
     func testProofreadingValidatorAcceptsCorrectionsAndPassesProtectedTerms() async throws {
@@ -194,7 +196,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         let started = expectation(description: "started")
         let done = expectation(description: "done")
         generator.onStarted = { _ in started.fulfill() }
-        var result: String??
+        var result: HaasPunctuationOutcome?
         XCTAssertTrue(worker.submit("巽さんの端末ないで", requestID: UUID(), protectedTerms: ["巽"]) {
             result = $0
             done.fulfill()
@@ -202,7 +204,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         await fulfillment(of: [started], timeout: 1)
         try generator.complete(index: 0, result: .success("巽さんの端末内で"))
         await fulfillment(of: [done], timeout: 1)
-        XCTAssertEqual(result, .some("巽さんの端末内で"))
+        XCTAssertEqual(result, .formatted("巽さんの端末内で"))
         XCTAssertEqual(seenTerms, ["巽"])
     }
 
@@ -213,7 +215,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         let started = expectation(description: "started")
         let done = expectation(description: "done")
         generator.onStarted = { _ in started.fulfill() }
-        var result: String??
+        var result: HaasPunctuationOutcome?
         XCTAssertTrue(worker.submit("端末ないで", requestID: UUID()) {
             result = $0
             done.fulfill()
@@ -221,7 +223,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         await fulfillment(of: [started], timeout: 1)
         try generator.complete(index: 0, result: .success("端末内で"))
         await fulfillment(of: [done], timeout: 1)
-        XCTAssertEqual(result, .some(nil))
+        XCTAssertEqual(result, .rejected)
     }
 
     private func occupyCurrentActor(for interval: TimeInterval) {
@@ -255,7 +257,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
             let started = expectation(description: "started \(original)")
             let completed = expectation(description: "completed \(original)")
             generator.onStarted = { _ in started.fulfill() }
-            var results: [String?] = []
+            var results: [HaasPunctuationOutcome] = []
             XCTAssertTrue(worker.submit(original, requestID: UUID()) {
                 results.append($0)
                 completed.fulfill()
@@ -263,7 +265,7 @@ final class HaasPunctuationWorkerTests: XCTestCase {
             await fulfillment(of: [started], timeout: 1)
             try generator.complete(index: 0, result: .success(model))
             await fulfillment(of: [completed], timeout: 1)
-            XCTAssertEqual(results, [expected], original)
+            XCTAssertEqual(results, [.formatted(expected)], original)
         }
     }
 }

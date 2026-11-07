@@ -359,10 +359,11 @@ final class HaasInputDeliveryTests: XCTestCase {
         try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
 
         session.receive(.committed(id: "first", text: "自販の資料です"))
-        XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, "JiHANの資料です")
+        // 整形を待つ間も、AI の結果を使えないときの文 (速度優先の規則を当てたもの) を保存しておく
+        XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, "JiHANの資料です。")
         XCTAssertEqual(session.recognizedText, "JiHANの資料です")
         session.receive(.committed(id: "second", text: "続けます"))
-        XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, "JiHANの資料です続けます")
+        XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, "JiHANの資料です。続けます")
         XCTAssertTrue(fixture.paster.calls.isEmpty)
         await waitUntil { generator.requests.count == 1 }
         XCTAssertEqual(generator.requests, ["JiHANの資料です"])
@@ -395,8 +396,8 @@ final class HaasInputDeliveryTests: XCTestCase {
             await waitUntil { generator.requests.count == 1 }
             if recognitionFailed { old.receive(.error(URLError(.networkConnectionLost))) }
             else { old.cancel() }
-            XCTAssertEqual(try fixture.savedState().active?.ledger.pendingText, "前の資料です")
-            XCTAssertEqual(old.recognizedText, "前の資料です")
+            XCTAssertEqual(try fixture.savedState().active?.ledger.pendingText, "前の資料です。")
+            XCTAssertEqual(old.recognizedText, "前の資料です。")
 
             try await fixture.delivery.begin(sessionID: next.sessionID, target: AvailableInputTarget())
             next.receive(.committed(id: "item-1", text: "今回の資料です"))
@@ -404,16 +405,16 @@ final class HaasInputDeliveryTests: XCTestCase {
             XCTAssertEqual(generator.requests.count, 1, "The canceled native request still owns the generation slot")
             XCTAssertEqual(fixture.paster.calls.map(\.text), ["今回の資料です"])
             XCTAssertEqual(next.recognizedText, "今回の資料です")
-            XCTAssertEqual(fixture.delivery.archivedRecoveries.first?.ledger.pendingText, "前の資料です")
+            XCTAssertEqual(fixture.delivery.archivedRecoveries.first?.ledger.pendingText, "前の資料です。")
 
             let exited = expectation(description: "Old native result arrives after the next recording")
             generator.onExited = { _ in exited.fulfill() }
             try generator.complete(index: 0, result: .success("前の資料です。"))
             await fulfillment(of: [exited], timeout: 1)
-            XCTAssertEqual(old.recognizedText, "前の資料です")
+            XCTAssertEqual(old.recognizedText, "前の資料です。")
             XCTAssertEqual(next.recognizedText, "今回の資料です")
             XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, "今回の資料です")
-            XCTAssertEqual(fixture.delivery.archivedRecoveries.first?.ledger.fullText, "前の資料です")
+            XCTAssertEqual(fixture.delivery.archivedRecoveries.first?.ledger.fullText, "前の資料です。")
             XCTAssertEqual(fixture.paster.calls.count, 1)
         }
     }
@@ -427,14 +428,14 @@ final class HaasInputDeliveryTests: XCTestCase {
         session.receive(.committed(id: "item-1", text: "コピーする資料です"))
         await waitUntil { generator.requests.count == 1 }
         fixture.delivery.copyPending()
-        XCTAssertEqual(fixture.paster.copiedTexts, ["コピーする資料です"])
+        XCTAssertEqual(fixture.paster.copiedTexts, ["コピーする資料です。"])
         XCTAssertEqual(try fixture.savedState().active?.ledger.segments.first?.disposition, .copied)
 
         let exited = expectation(description: "AI finishes after manual copy")
         generator.onExited = { _ in exited.fulfill() }
         try generator.complete(index: 0, result: .success("コピーする資料です。"))
         await fulfillment(of: [exited], timeout: 1)
-        XCTAssertEqual(session.recognizedText, "コピーする資料です")
+        XCTAssertEqual(session.recognizedText, "コピーする資料です。")
         XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, session.recognizedText)
         XCTAssertTrue(fixture.paster.calls.isEmpty)
     }
@@ -455,11 +456,11 @@ final class HaasInputDeliveryTests: XCTestCase {
         await fulfillment(of: [exited], timeout: 1)
         await waitUntil { fixture.delivery.hasUnsavedRecovery }
         XCTAssertTrue(fixture.delivery.hasUnsavedRecovery)
-        XCTAssertEqual(session.recognizedText, "保存してから整えます")
+        XCTAssertEqual(session.recognizedText, "保存してから整えます。")
         XCTAssertEqual(fixture.delivery.pendingText, session.recognizedText)
         XCTAssertTrue(fixture.paster.calls.isEmpty)
         fixture.delivery.copyPending()
-        XCTAssertEqual(fixture.paster.copiedTexts, ["保存してから整えます"])
+        XCTAssertEqual(fixture.paster.copiedTexts, ["保存してから整えます。"])
         let retained = try JSONDecoder().decode(HaasRecoveryState.self, from: Data(contentsOf:
             fixture.root.appendingPathComponent("retained-storage/state.json")))
         XCTAssertEqual(retained.active?.ledger.pendingText, session.recognizedText)

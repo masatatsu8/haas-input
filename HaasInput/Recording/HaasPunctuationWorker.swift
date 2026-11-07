@@ -7,6 +7,49 @@ protocol HaasPunctuationGenerating: AnyObject {
     func generate(_ text: String) async throws -> String
 }
 
+/// 区切りの句読点を決めた経路。端末のログに残し、テストでも値で確かめる
+enum HaasPunctuationRoute: String {
+    /// AI の結果を使えた
+    case formatted
+    /// AI の結果を検証で外した
+    case rejected
+    case timedOut
+    /// AI がエラーを返した
+    case failed
+    /// AI が使えないか、前の依頼がまだ終わっていないので、依頼を受けなかった
+    case unavailable
+    /// 前の区切りの整形中に届いたので、AI に回さなかった
+    case skippedWhileFormatting
+    /// 受け渡しを保存できなかったので、AI に回さなかった
+    case notAccepted
+    /// AI の結果は検証を通ったが、配送が止まるなどして台帳に入らなかった
+    case notApplied
+    /// 整形を待つ間に、取り消しか失敗で打ち切った
+    case cancelled
+}
+
+/// AI に依頼した区切りの結果
+enum HaasPunctuationOutcome: Equatable {
+    case formatted(String)
+    case rejected
+    case timedOut
+    case failed
+
+    var candidate: String? {
+        if case .formatted(let text) = self { return text }
+        return nil
+    }
+
+    var route: HaasPunctuationRoute {
+        switch self {
+        case .formatted: .formatted
+        case .rejected: .rejected
+        case .timedOut: .timedOut
+        case .failed: .failed
+        }
+    }
+}
+
 typealias HaasCandidateValidator = @MainActor (_ candidate: String, _ original: String, _ protectedTerms: [String]) -> String?
 
 @MainActor
@@ -44,7 +87,7 @@ final class HaasPunctuationWorker {
         let protectedTerms: [String]
         let deadline: ContinuousClock.Instant
         let timer: Task<Void, Never>
-        let completion: (String?) -> Void
+        let completion: (HaasPunctuationOutcome) -> Void
     }
 
     private let generator: (any HaasPunctuationGenerating)?
@@ -78,10 +121,15 @@ final class HaasPunctuationWorker {
         generator?.prewarm()
     }
 
+    /// submit が依頼を受けなかった理由。期限を過ぎていれば時間切れ、それ以外は AI が使えないとみなす
+    func declinedRoute(receivedAt: ContinuousClock.Instant) -> HaasPunctuationRoute {
+        ContinuousClock.now < receivedAt.advanced(by: timeout) ? .unavailable : .timedOut
+    }
+
     @discardableResult
     func submit(
         _ text: String, requestID: UUID, receivedAt: ContinuousClock.Instant = .now,
-        protectedTerms: [String] = [], completion: @escaping (String?) -> Void
+        protectedTerms: [String] = [], completion: @escaping (HaasPunctuationOutcome) -> Void
     ) -> Bool {
         let deadline = receivedAt.advanced(by: timeout)
         guard nativeRequestID == nil, let generator, generator.unavailableReason == nil,
@@ -123,9 +171,10 @@ final class HaasPunctuationWorker {
         guard let pending = waiter, pending.id == requestID else { return }
         waiter = nil
         nativeTask?.cancel()
-        pending.completion(nil)
+        pending.completion(.timedOut)
     }
 
+    /// output が nil なのは、期限までに始められなかったか、AI がエラーを返したとき
     private func complete(_ requestID: UUID, output: String?) {
         guard nativeRequestID == requestID else { return }
         nativeRequestID = nil
@@ -133,8 +182,14 @@ final class HaasPunctuationWorker {
         guard let pending = waiter, pending.id == requestID else { return }
         waiter = nil
         pending.timer.cancel()
-        let candidate = ContinuousClock.now < pending.deadline
-            ? output.flatMap { validator($0, pending.text, pending.protectedTerms) } : nil
-        pending.completion(candidate)
+        let outcome: HaasPunctuationOutcome
+        if ContinuousClock.now >= pending.deadline {
+            outcome = .timedOut
+        } else if let output {
+            outcome = validator(output, pending.text, pending.protectedTerms).map { .formatted($0) } ?? .rejected
+        } else {
+            outcome = .failed
+        }
+        pending.completion(outcome)
     }
 }

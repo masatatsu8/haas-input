@@ -53,7 +53,8 @@ final class HaasDictationSession {
     private struct PendingFormatting {
         let requestID: UUID
         let itemID: String
-        /// accept に渡した文。前の区切りの保留した「。」を付けたときは、その「。」を含む
+        /// accept に渡した文。速度優先の規則を当てたもので、AI の結果を使えないときはこの文で決める。
+        /// 前の区切りの保留した「。」を付けたときは、その「。」を含む
         let deliveredText: String
         let attachesHeldPeriod: Bool
         /// 整形中に届いた次の区切りの整形前の文。この区切りの末尾の「。」を、これで決める
@@ -82,7 +83,10 @@ final class HaasDictationSession {
     /// 末尾の「。」を外して受け渡し、次の区切りを待っている区切りの id
     private var heldPeriodItemID: String?
     private var formattingWaiters: [CheckedContinuation<Void, Never>] = []
+    /// 端末内 AI を使うモードで、区切りごとに句読点を決めた経路
+    private(set) var punctuationRoutes: [String: HaasPunctuationRoute] = [:]
     private let logger = Logger(subsystem: "com.tatsumi.VoiceInkHaas", category: "HaasDictationSession")
+    private let punctuationLogger = Logger(subsystem: "com.tatsumi.VoiceInkHaas", category: "HaasPunctuation")
 
     var recognizedText: String { transcript.text }
 
@@ -217,8 +221,9 @@ final class HaasDictationSession {
             if punctuationMode == .fast || pendingFormatting != nil {
                 // 整形中の区切りの末尾の「。」はまだ決まっていないので、この区切りの頭には付けない。
                 // 整形が終わったときに、最初に届いたこの区切りの頭で決める
+                if pendingFormatting != nil { recordPunctuationRoute(.skippedWhileFormatting, itemID: id) }
                 if pendingFormatting?.nextBase == nil { pendingFormatting?.nextBase = base }
-                var formatted = punctuationMode == .fast ? HaasPunctuationFormatter.fast(base) : base
+                var formatted = HaasPunctuationFormatter.fast(base)
                 if attachesHeldPeriod { formatted = HaasPunctuationFormatter.attachingHeldPeriod(to: formatted) }
                 let split = HaasPunctuationFormatter.splittingHeldPeriod(formatted)
                 transcript.finalize(id: id, text: split.body)
@@ -226,8 +231,12 @@ final class HaasDictationSession {
                 if split.held { heldPeriodItemID = id }
             } else {
                 let requestID = UUID()
-                let delivered = attachesHeldPeriod ? HaasPunctuationFormatter.attachingHeldPeriod(to: base) : base
+                // AI の結果を使えないときや配送が止まったときも、台帳と記録に句読点のある同じ文が残るよう、
+                // 受け渡す時点で速度優先の規則を当てておく
+                let fallback = HaasPunctuationFormatter.fast(base)
+                let delivered = attachesHeldPeriod ? HaasPunctuationFormatter.attachingHeldPeriod(to: fallback) : fallback
                 guard delivery.accept(sessionID: sessionID, itemID: id, text: delivered, formattingHoldID: requestID) else {
+                    recordPunctuationRoute(.notAccepted, itemID: id)
                     transcript.finalize(id: id, text: delivered)
                     publishPreview()
                     return
@@ -236,10 +245,12 @@ final class HaasDictationSession {
                     requestID: requestID, itemID: id, deliveredText: delivered,
                     attachesHeldPeriod: attachesHeldPeriod)
                 if !punctuationWorker.submit(base, requestID: requestID, receivedAt: receivedAt,
-                    protectedTerms: protectedTerms.filter(base.contains), completion: { [weak self] candidate in
-                    self?.completeFormatting(requestID: requestID, candidate: candidate)
+                    protectedTerms: protectedTerms.filter(base.contains), completion: { [weak self] outcome in
+                    self?.completeFormatting(requestID: requestID, candidate: outcome.candidate, route: outcome.route)
                 }) {
-                    completeFormatting(requestID: requestID, candidate: nil)
+                    completeFormatting(
+                        requestID: requestID, candidate: nil,
+                        route: punctuationWorker.declinedRoute(receivedAt: receivedAt))
                 }
             }
             publishPreview()
@@ -248,7 +259,7 @@ final class HaasDictationSession {
         }
     }
 
-    private func completeFormatting(requestID: UUID, candidate: String?) {
+    private func completeFormatting(requestID: UUID, candidate: String?, route: HaasPunctuationRoute) {
         guard !isCancelled, !isFinished, failure == nil,
             let pending = pendingFormatting, pending.requestID == requestID
         else { return }
@@ -269,6 +280,7 @@ final class HaasDictationSession {
         let applied = delivery.completeHeldFormatting(
             sessionID: sessionID, itemID: pending.itemID, requestID: requestID, text: text
         )
+        recordPunctuationRoute(route == .formatted && !applied ? .notApplied : route, itemID: pending.itemID)
         // 台帳に残らなかった文で記録を確定しない。false なら accept の時の文が台帳に残っている
         transcript.finalize(id: pending.itemID, text: applied ? text : pending.deliveredText)
         if applied, holdsPeriod { heldPeriodItemID = pending.itemID }
@@ -281,8 +293,16 @@ final class HaasDictationSession {
         guard let pending = pendingFormatting else { return }
         pendingFormatting = nil
         punctuationWorker.cancel(requestID: pending.requestID)
+        recordPunctuationRoute(.cancelled, itemID: pending.itemID)
         transcript.finalize(id: pending.itemID, text: pending.deliveredText)
         resumeFormattingWaiters()
+    }
+
+    /// 文と AI の出力は残さず、経路とモードだけを残す
+    private func recordPunctuationRoute(_ route: HaasPunctuationRoute, itemID: String) {
+        punctuationRoutes[itemID] = route
+        punctuationLogger.notice(
+            "punctuation route=\(route.rawValue, privacy: .public) mode=\(self.punctuationMode.rawValue, privacy: .public)")
     }
 
     /// 保留中の「。」を、次の区切りの整形前の文で解く。付けるなら true
