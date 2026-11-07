@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon
 import Foundation
 
 /// アプリ自身が送る CGEvent に付ける印。見張りは、この印のあるイベントを利用者の操作として数えない。
@@ -63,9 +64,15 @@ protocol HaasInputWatching: AnyObject {
 }
 
 /// NSEvent の全体監視で、入力後の操作を見張る。ロジックは HaasInputWatch に置く。
+/// 次のときは見張りを打ち切り、その印は二度と clean にしない。
+/// - Secure Event Input が有効 (全体監視にキーが届かない)。見張りの間は一定の間隔で確かめる
+/// - 除外するショートカットが変わった (古い一覧のままでは、解除したキーの入力を見逃す)
 @MainActor
 final class HaasUserInputMonitor: HaasInputWatching {
     static let shared = HaasUserInputMonitor()
+
+    /// 見張りの間に Secure Event Input を確かめる間隔 (秒)
+    static let secureInputPollInterval: TimeInterval = 0.25
 
     private static let observedMask: NSEvent.EventTypeMask = [
         .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel,
@@ -77,18 +84,49 @@ final class HaasUserInputMonitor: HaasInputWatching {
     private var excludedShortcuts: [Shortcut] = []
     private let excludedShortcutsProvider: () -> [Shortcut]
     private let isAccessibilityTrusted: () -> Bool
+    private let isSecureInputEnabled: () -> Bool
+    private let startPolling: @MainActor (@escaping @MainActor () -> Void) -> (() -> Void)
     private let makeGlobalMonitor: (@escaping (NSEvent) -> Void) -> Any?
+    /// 動いている確認を止める。見張りが clean の間だけ動かす
+    private var stopPolling: (() -> Void)?
+    private var shortcutObserver: NSObjectProtocol?
 
+    /// - startPolling: 渡した処理を一定の間隔で呼び始め、止める処理を返す
     init(
         excludedShortcutsProvider: @escaping () -> [Shortcut] = HaasUserInputMonitor.defaultExcludedShortcuts,
         isAccessibilityTrusted: @escaping () -> Bool = { AXIsProcessTrusted() },
+        isSecureInputEnabled: @escaping () -> Bool = { IsSecureEventInputEnabled() },
+        startPolling: @escaping @MainActor (@escaping @MainActor () -> Void) -> (() -> Void) =
+            HaasUserInputMonitor.pollOnMainRunLoop,
+        notificationCenter: NotificationCenter = .default,
         makeGlobalMonitor: @escaping (@escaping (NSEvent) -> Void) -> Any? = { handler in
             NSEvent.addGlobalMonitorForEvents(matching: HaasUserInputMonitor.observedMask, handler: handler)
         }
     ) {
         self.excludedShortcutsProvider = excludedShortcutsProvider
         self.isAccessibilityTrusted = isAccessibilityTrusted
+        self.isSecureInputEnabled = isSecureInputEnabled
+        self.startPolling = startPolling
         self.makeGlobalMonitor = makeGlobalMonitor
+        // ショートカットが変わると除外の一覧が古くなるので、今の見張りを打ち切る
+        shortcutObserver = notificationCenter.addObserver(
+            forName: ShortcutStore.shortcutDidChange, object: nil, queue: nil
+        ) { [weak self] _ in
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { self?.invalidate() }
+            } else {
+                Task { @MainActor in self?.invalidate() }
+            }
+        }
+    }
+
+    /// 本番の確認。メインの run loop のタイマーで呼ぶ
+    static func pollOnMainRunLoop(_ tick: @escaping @MainActor () -> Void) -> () -> Void {
+        let timer = Timer(timeInterval: secureInputPollInterval, repeats: true) { _ in
+            MainActor.assumeIsolated { tick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        return { timer.invalidate() }
     }
 
     /// 見張りの除外に使う一覧。録音のショートカットと訂正のショートカットだけで、
@@ -137,21 +175,42 @@ final class HaasUserInputMonitor: HaasInputWatching {
                     guard let self, self.watch.isClean, let observed = Self.observedInput(from: event) else { return }
                     let isOwn = event.cgEvent?.getIntegerValueField(.eventSourceUserData) == HaasSyntheticInput.marker
                     self.watch.record(observed, isOwnEvent: isOwn, shortcuts: self.excludedShortcuts)
+                    self.updatePolling()
                 }
             }
         }
-        // 監視を作れない、または権限がないときは信頼できないので、clean にしない
-        if globalMonitor == nil || !isAccessibilityTrusted() { watch.invalidate() }
+        // 監視を作れない、権限がない、キーが届かない (Secure Event Input) ときは信頼できないので、clean にしない
+        if globalMonitor == nil || !isAccessibilityTrusted() || isSecureInputEnabled() { watch.invalidate() }
+        updatePolling()
         return token
     }
 
     func isClean(for token: UUID) -> Bool {
-        if !isAccessibilityTrusted() { watch.invalidate() }
+        if !isAccessibilityTrusted() || isSecureInputEnabled() { watch.invalidate() }
+        updatePolling()
         return watch.isClean(for: token)
     }
 
     func invalidate() {
         watch.invalidate()
+        updatePolling()
+    }
+
+    /// 見張りの間に Secure Event Input が一度でも有効になれば、見張りを打ち切る。無効に戻っても復活させない
+    private func checkSecureInput() {
+        if isSecureInputEnabled() { watch.invalidate() }
+        updatePolling()
+    }
+
+    /// clean な見張りがある間だけ確認を動かす
+    private func updatePolling() {
+        if watch.isClean {
+            guard stopPolling == nil else { return }
+            stopPolling = startPolling { [weak self] in self?.checkSecureInput() }
+        } else if let stop = stopPolling {
+            stopPolling = nil
+            stop()
+        }
     }
 
     private static func observedInput(from event: NSEvent) -> HaasObservedInput? {

@@ -5,14 +5,17 @@ import os
 
 @MainActor
 final class RecordingShortcutManager: ObservableObject {
+    // 録音のショートカットの選択や方式が変わると、入力後の見張りの除外の一覧が古くなるので、見張りを打ち切る
     @Published var primaryRecordingShortcut: ShortcutSelection {
         didSet {
+            invalidateInputWatch()
             UserDefaults.standard.set(primaryRecordingShortcut.rawValue, forKey: "primaryRecordingShortcut")
             refreshShortcutMonitoring(reason: "primary-selection")
         }
     }
     @Published var secondaryRecordingShortcut: ShortcutSelection {
         didSet {
+            invalidateInputWatch()
             if secondaryRecordingShortcut == .none { ShortcutStore.setShortcut(nil, for: .secondaryRecording) }
             UserDefaults.standard.set(secondaryRecordingShortcut.rawValue, forKey: "secondaryRecordingShortcut")
             refreshShortcutMonitoring(reason: "secondary-selection")
@@ -20,6 +23,7 @@ final class RecordingShortcutManager: ObservableObject {
     }
     @Published var primaryRecordingShortcutMode: Mode {
         didSet {
+            invalidateInputWatch()
             UserDefaults.standard.set(primaryRecordingShortcutMode.rawValue, forKey: "primaryRecordingShortcutMode")
             shortcutModeHandler.resetShortcutState(for: .primaryRecording)
             shortcutMonitor.resetShortcutStates(for: [.primaryRecording])
@@ -28,6 +32,7 @@ final class RecordingShortcutManager: ObservableObject {
     }
     @Published var secondaryRecordingShortcutMode: Mode {
         didSet {
+            invalidateInputWatch()
             UserDefaults.standard.set(secondaryRecordingShortcutMode.rawValue, forKey: "secondaryRecordingShortcutMode")
             shortcutModeHandler.resetShortcutState(for: .secondaryRecording)
             shortcutMonitor.resetShortcutStates(for: [.secondaryRecording])
