@@ -177,6 +177,10 @@ final class CursorPaster {
         vDown.flags = .maskCommand
         vUp.flags = .maskCommand
         cmdUp.flags = []
+        // 利用者の操作と区別できるよう、自分が送るイベントに印を付ける
+        for event in [cmdDown, vDown, vUp, cmdUp] {
+            event.setIntegerValueField(.eventSourceUserData, value: HaasSyntheticInput.marker)
+        }
 
         if let rejection = pasteRejection() {
             logger.notice("Paste guard id=\(sessionID, privacy: .public) phase=before-command reason=\(String(describing: rejection), privacy: .public)")

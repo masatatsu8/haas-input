@@ -162,7 +162,8 @@ enum HaasRecoveryCopyKind: Equatable { case pending, uncertain }
 
 @MainActor
 final class HaasInputDelivery: ObservableObject {
-    static let shared = HaasInputDelivery(store: HaasRecoveryStore(), textPaster: HaasSystemTextPaster())
+    static let shared = HaasInputDelivery(
+        store: HaasRecoveryStore(), textPaster: HaasSystemTextPaster(), inputMonitor: HaasUserInputMonitor.shared)
 
     @Published private var state = HaasRecoveryState()
     @Published private(set) var message = ""
@@ -171,6 +172,9 @@ final class HaasInputDelivery: ObservableObject {
     @Published private(set) var resumeCountdown: Int?
     private let store: HaasRecoveryStore
     private let textPaster: any HaasTextPasting
+    private let inputMonitor: any HaasInputWatching
+    /// 録音の開始で始めた、入力後の操作の見張りの印
+    private(set) var watchToken: UUID?
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "HaasInputDelivery")
     private var loadFailure: Error?
     private var persistenceFailure: Error?
@@ -197,9 +201,13 @@ final class HaasInputDelivery: ObservableObject {
         return first
     }
 
-    init(store: HaasRecoveryStore, textPaster: any HaasTextPasting) {
+    init(
+        store: HaasRecoveryStore, textPaster: any HaasTextPasting,
+        inputMonitor: any HaasInputWatching = HaasUserInputMonitor.shared
+    ) {
         self.store = store
         self.textPaster = textPaster
+        self.inputMonitor = inputMonitor
         do {
             let loaded = try store.load()
             state = loaded
@@ -256,6 +264,7 @@ final class HaasInputDelivery: ObservableObject {
         isPaused = target == nil
         message = target == nil ? "入力先を確認できません。認識結果は保留し、コピーできます。" : ""
         recoveryError = nil
+        watchToken = inputMonitor.startWatching()
         logger.notice("delivery phase=begin session=\(sessionID.uuidString, privacy: .public) archives=\(candidate.archives.count, privacy: .public)")
     }
 

@@ -3,6 +3,15 @@ import XCTest
 
 @MainActor
 final class HaasInputDeliveryTests: XCTestCase {
+    func testBeginStartsInputWatch() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        XCTAssertNil(fixture.delivery.watchToken)
+        try await fixture.delivery.begin(sessionID: UUID(), target: nil)
+        XCTAssertEqual(fixture.monitor.startCount, 1)
+        XCTAssertEqual(fixture.delivery.watchToken, fixture.monitor.lastToken)
+    }
+
     func testUnresolvedSessionsAreArchivedWithoutBlockingOrMixingNewInput() async throws {
         let fixture = try DeliveryFixture()
         defer { fixture.cleanUp() }
@@ -400,6 +409,7 @@ private final class DeliveryFixture {
     let defaults: UserDefaults
     let suite: String
     let paster = ControlledTextPaster()
+    let monitor = FakeInputWatcher()
     let delivery: HaasInputDelivery
 
     init() throws {
@@ -408,7 +418,8 @@ private final class DeliveryFixture {
         suite = "HaasDeliveryTests.\(UUID().uuidString)"
         defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         delivery = HaasInputDelivery(
-            store: HaasRecoveryStore(fileURL: fileURL, legacyDefaults: defaults), textPaster: paster
+            store: HaasRecoveryStore(fileURL: fileURL, legacyDefaults: defaults), textPaster: paster,
+            inputMonitor: monitor
         )
     }
 
@@ -465,4 +476,18 @@ private final class ControlledTextPaster: HaasTextPasting {
         let continuation = try XCTUnwrap(continuations.removeValue(forKey: index))
         continuation.resume(returning: CursorPaster.PasteOutcome(result: result))
     }
+}
+
+@MainActor
+private final class FakeInputWatcher: HaasInputWatching {
+    private(set) var startCount = 0
+    private(set) var lastToken: UUID?
+    func startWatching() -> UUID {
+        startCount += 1
+        let token = UUID()
+        lastToken = token
+        return token
+    }
+    func isClean(for token: UUID) -> Bool { token == lastToken }
+    func invalidate() { lastToken = nil }
 }
