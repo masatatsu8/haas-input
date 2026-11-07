@@ -131,4 +131,77 @@ final class HaasUsageWordingTests: XCTestCase {
             "🔥 7日連続で使っています"
         )
     }
+
+    private func day(_ d: Date, duration: TimeInterval = 720, characters: Int = 2340, recordings: Int = 8) -> HaasUsageDay {
+        HaasUsageDay(day: d, duration: duration, characters: characters, recordings: recordings)
+    }
+
+    func testRecordingCountUsesGrouping() {
+        XCTAssertEqual(HaasUsageWording.recordings(8), "8回")
+        XCTAssertEqual(HaasUsageWording.recordings(1_234), "1,234回")
+    }
+
+    func testTodayAmountIncludesRecordingCount() {
+        XCTAssertEqual(HaasUsageWording.todayAmount(day(now)), "12分 ・ 2,340文字 ・ 8回")
+    }
+
+    func testDayHelpShowsRecordingCountOnlyForUsedDays() {
+        XCTAssertEqual(HaasUsageWording.dayHelp(date: "11月7日", day: day(now)), "11月7日 12分 ・ 2,340文字 ・ 8回")
+        let unused = day(now, duration: 0, characters: 0, recordings: 0)
+        XCTAssertEqual(HaasUsageWording.dayHelp(date: "11月7日", day: unused), "11月7日")
+    }
+
+    func testYearHeadline() {
+        XCTAssertEqual(HaasUsageWording.yearHeadline(recordings: 1_234), "この1年で 1,234回 入力しました")
+        XCTAssertEqual(HaasUsageWording.yearHeadline(recordings: 0), "この1年は、まだ入力がありません")
+    }
+
+    func testWeekdayLabelsShowOnlyMondayWednesdayFriday() {
+        XCTAssertEqual(HaasUsageWording.weekdayLabels(firstWeekday: 1), [nil, "月", nil, "水", nil, "金", nil])
+        XCTAssertEqual(HaasUsageWording.weekdayLabels(firstWeekday: 2), ["月", nil, "水", nil, "金", nil, nil])
+    }
+
+    private func weekStarts(from start: Date, count: Int) -> [Date] {
+        (0..<count).map { calendar.date(byAdding: .day, value: 7 * $0, to: start)! }
+    }
+
+    func testMonthMarksPutLabelOnFirstColumnOfEachMonth() {
+        // 2026-10-04 (日) から。10/4, 10/11, 10/18, 10/25, 11/1, 11/8 ...
+        let marks = HaasUsageWording.monthMarks(weekStarts: weekStarts(from: date(2026, 10, 4), count: 8), calendar: calendar)
+        XCTAssertEqual(marks, [
+            HaasUsageMonthMark(column: 0, text: "10月"),
+            HaasUsageMonthMark(column: 4, text: "11月"),
+        ])
+    }
+
+    func testMonthMarksCrossYearBoundary() {
+        // 12/6, 12/13, 12/20, 12/27, 1/3, 1/10
+        let marks = HaasUsageWording.monthMarks(weekStarts: weekStarts(from: date(2025, 12, 6), count: 6), calendar: calendar)
+        XCTAssertEqual(marks.map(\.text), ["12月", "1月"])
+        XCTAssertEqual(marks.map(\.column), [0, 4])
+    }
+
+    func testMonthMarksDropEarlierLabelWhenTooCloseToNext() {
+        // 最初の列が10/30で、次の列 (11/6) で月が変わる。隣り合うので先の10月は出さない
+        let marks = HaasUsageWording.monthMarks(weekStarts: weekStarts(from: date(2026, 10, 30), count: 4), calendar: calendar)
+        XCTAssertEqual(marks, [HaasUsageMonthMark(column: 1, text: "11月")])
+    }
+
+    func testMonthMarksKeepLabelsTwoColumnsApart() {
+        let marks = HaasUsageWording.monthMarks(weekStarts: weekStarts(from: date(2026, 10, 24), count: 5), calendar: calendar)
+        // 10/24, 10/31, 11/7, 11/14, 11/21 : 列2で11月。列0の10月とは2列離れている
+        XCTAssertEqual(marks, [
+            HaasUsageMonthMark(column: 0, text: "10月"),
+            HaasUsageMonthMark(column: 2, text: "11月"),
+        ])
+    }
+
+    func testMonthMarksEmptyForNoColumns() {
+        XCTAssertEqual(HaasUsageWording.monthMarks(weekStarts: [], calendar: calendar), [])
+    }
+
+    func testLegendLabels() {
+        XCTAssertEqual(HaasUsageWording.legendLess, "少ない")
+        XCTAssertEqual(HaasUsageWording.legendMore, "多い")
+    }
 }

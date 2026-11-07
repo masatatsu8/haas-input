@@ -154,4 +154,18 @@ final class HaasUsageStatisticsTests: XCTestCase {
         XCTAssertEqual(HaasDestination.allCases.map(\.rawValue), ["home", "usage", "history", "dictionary", "settings"])
         XCTAssertEqual(HaasDestination.usage.title, "記録")
     }
+
+    func testRecordingCountsTotalAndWithinGrid() {
+        let result = summary([
+            sample(date(2026, 11, 7)), sample(date(2026, 11, 7, 18)), sample(date(2026, 11, 1)),
+            sample(date(2024, 1, 5)),
+        ])
+        XCTAssertEqual(result.totalRecordings, 4)
+        XCTAssertEqual(result.gridRecordings, 3)
+    }
+
+    func testGridRecordingsIgnoreFutureSamples() {
+        let result = summary([sample(date(2026, 11, 7)), sample(date(2026, 11, 9))])
+        XCTAssertEqual(result.gridRecordings, 1)
+    }
 }

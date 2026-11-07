@@ -1,9 +1,17 @@
 import Foundation
 
+/// 草の上に出す月の見出し。column は週の列の位置 (0始まり)。
+struct HaasUsageMonthMark: Equatable, Sendable {
+    let column: Int
+    let text: String
+}
+
 /// 利用状況の表示文言。数の表記はロケールに依存させない。
 enum HaasUsageWording {
     static let notUsedToday = "今日はまだ。1文だけ話してみませんか"
     static let emptyHistory = "最初の1文を話すと、ここに記録が育ちます"
+    static let legendLess = "少ない"
+    static let legendMore = "多い"
 
     private static let manuscriptPageCharacters = 400
     private static let shortStoryCharacters = 20_000
@@ -20,6 +28,45 @@ enum HaasUsageWording {
         let minutes = totalMinutes % 60
         if hours == 0 { return "\(minutes)分" }
         return minutes == 0 ? "\(hours)時間" : "\(hours)時間\(minutes)分"
+    }
+
+    static func recordings(_ count: Int) -> String {
+        "\(grouped(count))回"
+    }
+
+    /// 「12分 ・ 2,340文字 ・ 8回」
+    static func todayAmount(_ day: HaasUsageDay) -> String {
+        "\(duration(day.duration)) ・ \(characters(day.characters)) ・ \(recordings(day.recordings))"
+    }
+
+    /// 草のマスの説明。使っていない日は日付だけ。
+    static func dayHelp(date: String, day: HaasUsageDay) -> String {
+        day.isUsed ? "\(date) \(todayAmount(day))" : date
+    }
+
+    static func yearHeadline(recordings count: Int) -> String {
+        count > 0 ? "この1年で \(recordings(count)) 入力しました" : "この1年は、まだ入力がありません"
+    }
+
+    /// 草の行ごとの曜日 (月・水・金だけ)。行は週の始まり (firstWeekday: 1=日曜) から数える。
+    static func weekdayLabels(firstWeekday: Int) -> [String?] {
+        let names = [2: "月", 4: "水", 6: "金"]
+        return (0..<7).map { names[(firstWeekday - 1 + $0) % 7 + 1] }
+    }
+
+    /// 月が変わる列に月の見出しを置く。先頭の列は月の途中でも置く。
+    /// 次の見出しと2列未満しか離れていない見出しは、重なるので出さない。
+    static func monthMarks(weekStarts: [Date], calendar: Calendar) -> [HaasUsageMonthMark] {
+        var marks: [HaasUsageMonthMark] = []
+        var previousMonth: Int?
+        for (column, start) in weekStarts.enumerated() {
+            let month = calendar.component(.month, from: start)
+            guard month != previousMonth else { continue }
+            previousMonth = month
+            if let last = marks.last, column - last.column < 2 { marks.removeLast() }
+            marks.append(HaasUsageMonthMark(column: column, text: "\(month)月"))
+        }
+        return marks
     }
 
     static func characters(_ count: Int) -> String {

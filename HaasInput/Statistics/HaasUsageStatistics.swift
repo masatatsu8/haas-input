@@ -37,6 +37,10 @@ struct HaasUsageSummary: Equatable, Sendable {
     let totalDuration: TimeInterval
     let totalCharacters: Int
     let usedDays: Int
+    /// 入力した回数の合計 (全期間)
+    let totalRecordings: Int
+    /// 草に出している1年分の入力回数
+    let gridRecordings: Int
     let currentStreak: Int
     let longestStreak: Int
     let recentAverageDuration: TimeInterval?
@@ -89,6 +93,8 @@ struct HaasUsageSummary: Equatable, Sendable {
         totalDuration = all.reduce(0) { $0 + $1.duration }
         totalCharacters = all.reduce(0) { $0 + $1.characters }
         usedDays = all.count
+        totalRecordings = all.reduce(0) { $0 + $1.recordings }
+        gridRecordings = grid.reduce(0) { $0 + $1.recordings }
 
         // 今日が未使用でも、昨日までの連続は途切れていないものとして数える
         var cursor = today.isUsed ? todayKey : offset(todayKey, days: -1)
