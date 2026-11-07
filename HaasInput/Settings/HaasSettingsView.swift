@@ -119,7 +119,7 @@ private struct HaasGeneralSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 Text(punctuationMode.description).font(.callout).foregroundStyle(.secondary)
-                if punctuationMode == .natural {
+                if punctuationMode.usesOnDeviceModel {
                     Text(punctuationAvailability).font(.caption).foregroundStyle(.secondary)
                 }
                 Text("変更は次の録音から反映されます。")
@@ -222,6 +222,6 @@ private struct HaasGeneralSettingsView: View {
     }
 
     private func refreshPunctuationAvailability() {
-        punctuationAvailability = HaasPunctuationWorker.shared.unavailableReason ?? "このMacで利用できます。"
+        punctuationAvailability = HaasPunctuationWorker.forMode(punctuationMode).unavailableReason ?? "このMacで利用できます。"
     }
 }

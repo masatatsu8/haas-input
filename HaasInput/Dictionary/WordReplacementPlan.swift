@@ -15,6 +15,7 @@ struct WordReplacementPlan {
     }
 
     private let rules: [PreparedRule]
+    let replacementTexts: [String]
 
     init(records: [Record]) throws {
         let sortedRules = records
@@ -42,6 +43,9 @@ struct WordReplacementPlan {
                 }
                 return $0.id < $1.id
             }
+
+        var seenTexts = Set<String>()
+        replacementTexts = sortedRules.map(\.replacement).filter { !$0.isEmpty && seenTexts.insert($0).inserted }
 
         rules = try sortedRules.map { rule in
             let escaped = NSRegularExpression.escapedPattern(for: rule.original)

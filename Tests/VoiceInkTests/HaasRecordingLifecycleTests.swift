@@ -170,6 +170,11 @@ final class HaasRecordingLifecycleTests: XCTestCase {
         _ = try await beginRecording(fixture)
         XCTAssertEqual(fixture.sessions.last?.options.punctuationMode, .natural)
         await fixture.engine.cancelRecording()
+
+        UserDefaults.standard.set("proofread", forKey: HaasPunctuationMode.settingsKey)
+        _ = try await beginRecording(fixture)
+        XCTAssertEqual(fixture.sessions.last?.options.punctuationMode, .proofread)
+        await fixture.engine.cancelRecording()
     }
 
     func testTerminationRefusesToDiscardUnsavedRecovery() async throws {
