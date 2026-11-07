@@ -82,6 +82,8 @@ final class HaasDictationSession {
     private var pendingFormatting: PendingFormatting?
     /// 末尾の「。」を外して受け渡し、次の区切りを待っている区切りの id
     private var heldPeriodItemID: String?
+    /// 認識の最後の区切りまで受け取った。この後に整形が終わる区切りには、もう次の区切りが来ない
+    private var recognitionEnded = false
     private var formattingWaiters: [CheckedContinuation<Void, Never>] = []
     /// 端末内 AI を使うモードで、区切りごとに句読点を決めた経路
     private(set) var punctuationRoutes: [String: HaasPunctuationRoute] = [:]
@@ -161,6 +163,7 @@ final class HaasDictationSession {
 
     /// 認識の最後の区切りを受け取った後の仕上げ。整形を待ってから、配送を終える
     func finishAfterRecognition() async throws -> String {
+        recognitionEnded = true
         do {
             await waitForFormatting()
             if let failure { throw failure }
@@ -273,8 +276,11 @@ final class HaasDictationSession {
             if let nextBase = pending.nextBase {
                 if !HaasPunctuationFormatter.startsSentence(nextBase) { text = split.body }
             } else {
-                text = split.body
-                holdsPeriod = true
+                // 次が来ないとわかっていれば保留しない。「。」を別に貼ると、前の貼り付けの後始末を待って約2秒遅れる
+                if !recognitionEnded {
+                    text = split.body
+                    holdsPeriod = true
+                }
             }
         }
         let applied = delivery.completeHeldFormatting(
