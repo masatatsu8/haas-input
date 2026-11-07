@@ -14,6 +14,7 @@ final class HaasAppModel: ObservableObject {
     let permissions = HaasPermissions()
     private(set) var persistence: HaasPersistence?
     private(set) var engine: HaasEngine?
+    private(set) var usageRecorder: HaasUsageRecorder?
     private(set) var presentation: HaasRecorderPresentation?
     private(set) var shortcuts: RecordingShortcutManager?
     var openMainWindow: (() -> Void)?
@@ -26,7 +27,11 @@ final class HaasAppModel: ObservableObject {
         do {
             let persistence = try HaasPersistence()
             self.persistence = persistence
-            let engine = HaasEngine(modelContext: persistence.mainContext)
+            // 起動時に履歴から利用記録の抜けを埋めてから、録音ごとの記録を始める
+            let usageRecorder = HaasUsageRecorder(container: persistence.container)
+            usageRecorder.sync(from: persistence.mainContext)
+            self.usageRecorder = usageRecorder
+            let engine = HaasEngine(modelContext: persistence.mainContext, usageRecorder: usageRecorder)
             self.engine = engine
             let presentation = HaasRecorderPresentation(engine: engine)
             self.presentation = presentation
