@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00EEAD3E2AF703DB46F9C194 /* HaasHeldPeriodSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6A5CFF50FCD4D9730185A8B /* HaasHeldPeriodSessionTests.swift */; };
 		04B326ED7E7A9BAB399EB71A /* HaasVocabularyEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 836F474266D2DEF23A11A7A2 /* HaasVocabularyEditor.swift */; };
 		06FE488378B65F13272A2701 /* HaasPunctuationWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5021620F382223C8FCC85E79 /* HaasPunctuationWorker.swift */; };
 		0755138CA3ECC3F3EC384F89 /* HaasHistoryCSV.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AD4FC35113689FBCFA3B652 /* HaasHistoryCSV.swift */; };
@@ -452,6 +453,7 @@
 		A3889E300C0B835F300D37E3 /* ShortcutValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutValidator.swift; sourceTree = "<group>"; };
 		A4E6DC93A7683B85BBF18F6C /* StoragePreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoragePreferences.swift; sourceTree = "<group>"; };
 		A4EA8A0DDEF48AFE63512980 /* HaasHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasHistoryView.swift; sourceTree = "<group>"; };
+		A6A5CFF50FCD4D9730185A8B /* HaasHeldPeriodSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasHeldPeriodSessionTests.swift; sourceTree = "<group>"; };
 		A700301D0941C15197CC40F6 /* HaasHistoryAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasHistoryAudioPlayer.swift; sourceTree = "<group>"; };
 		A7B6348E5F342B284523FDCC /* AppAppearancePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearancePreference.swift; sourceTree = "<group>"; };
 		A91514068E4FBF66F2E38082 /* HaasProofreadValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaasProofreadValidator.swift; sourceTree = "<group>"; };
@@ -743,6 +745,7 @@
 				6C20FCBD32F5933C91876B08 /* HaasCorrectionSuggesterTests.swift */,
 				53A761276000597567255A3E /* HaasDeliveryTests.swift */,
 				F5C409CCCB7185C642A448D7 /* HaasFieldStateTests.swift */,
+				A6A5CFF50FCD4D9730185A8B /* HaasHeldPeriodSessionTests.swift */,
 				35C4A3232B7D15232389323C /* HaasHistoryPresentationTests.swift */,
 				174526B88CEDD0D03E9AFBE7 /* HaasInputDeliveryTests.swift */,
 				BEB158BDE28CF4A527585FE3 /* HaasInputWatchTests.swift */,
@@ -1236,6 +1239,7 @@
 				7EE51F51942B0C22F735E1C8 /* HaasCorrectionSuggesterTests.swift in Sources */,
 				5A29E738783B53A9ACAC5726 /* HaasDeliveryTests.swift in Sources */,
 				0D5B03BC3A733F53758CE3A9 /* HaasFieldStateTests.swift in Sources */,
+				00EEAD3E2AF703DB46F9C194 /* HaasHeldPeriodSessionTests.swift in Sources */,
 				30E0469C3621D8A2EE8FF26C /* HaasHistoryPresentationTests.swift in Sources */,
 				1966FE8CAE13D4889D28175E /* HaasInputDeliveryTests.swift in Sources */,
 				A49071A2B48B236EF9DDAA95 /* HaasInputWatchTests.swift in Sources */,

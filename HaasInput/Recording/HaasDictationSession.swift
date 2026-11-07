@@ -53,7 +53,11 @@ final class HaasDictationSession {
     private struct PendingFormatting {
         let requestID: UUID
         let itemID: String
-        let text: String
+        /// accept に渡した文。前の区切りの保留した「。」を付けたときは、その「。」を含む
+        let deliveredText: String
+        let attachesHeldPeriod: Bool
+        /// 整形中に届いた次の区切りの整形前の文。この区切りの末尾の「。」を、これで決める
+        var nextBase: String?
     }
 
     let sessionID = UUID()
@@ -75,6 +79,8 @@ final class HaasDictationSession {
     private let protectedTerms: [String]
     private var latestRawPreview = ""
     private var pendingFormatting: PendingFormatting?
+    /// 末尾の「。」を外して受け渡し、次の区切りを待っている区切りの id
+    private var heldPeriodItemID: String?
     private var formattingWaiters: [CheckedContinuation<Void, Never>] = []
     private let logger = Logger(subsystem: "com.tatsumi.VoiceInkHaas", category: "HaasDictationSession")
 
@@ -141,9 +147,21 @@ final class HaasDictationSession {
             if let failure { throw failure }
             guard let client else { throw HaasRuntimeError.notConnected }
             _ = try await client.finish()
+        } catch {
+            fail(error)
+            await delivery.finish(sessionID: sessionID)
+            throw error
+        }
+        return try await finishAfterRecognition()
+    }
+
+    /// 認識の最後の区切りを受け取った後の仕上げ。整形を待ってから、配送を終える
+    func finishAfterRecognition() async throws -> String {
+        do {
             await waitForFormatting()
             if let failure { throw failure }
             try checkCancellation()
+            deliverHeldPeriod()
             await delivery.finish(sessionID: sessionID)
             isFinished = true
             return transcript.text
@@ -157,6 +175,7 @@ final class HaasDictationSession {
     func cancel() {
         guard !isCancelled else { return }
         isCancelled = true
+        heldPeriodItemID = nil
         cancelPendingFormatting()
         let cancellationMessage = isFinished || failure != nil
             ? nil : "録音を取り消しました。既に入力した文章は変更せず、未入力分は保存しています。"
@@ -172,6 +191,7 @@ final class HaasDictationSession {
         logger.error("Haas session failed: \(String(reflecting: error), privacy: .private)")
         let message = (error as? HaasSessionError)?.errorDescription
             ?? HaasErrorPresentation.message(for: error, fallback: "音声認識を停止しました。もう一度録音を開始してください。")
+        heldPeriodItemID = nil
         cancelPendingFormatting()
         delivery.pause(sessionID: sessionID, message: message)
         audioInbox.finish()
@@ -193,21 +213,28 @@ final class HaasDictationSession {
         case .committed(let id, let text):
             let receivedAt = ContinuousClock.now
             guard let base = transcript.commit(id: id, rawText: text), !base.isEmpty else { return }
-            if punctuationMode == .fast {
-                let formatted = HaasPunctuationFormatter.fast(base)
-                transcript.finalize(id: id, text: formatted)
-                delivery.accept(sessionID: sessionID, itemID: id, text: formatted)
-            } else if pendingFormatting != nil {
-                transcript.finalize(id: id, text: base)
-                delivery.accept(sessionID: sessionID, itemID: id, text: base)
+            let attachesHeldPeriod = resolveHeldPeriod(nextBase: base)
+            if punctuationMode == .fast || pendingFormatting != nil {
+                // 整形中の区切りの末尾の「。」はまだ決まっていないので、この区切りの頭には付けない。
+                // 整形が終わったときに、最初に届いたこの区切りの頭で決める
+                if pendingFormatting?.nextBase == nil { pendingFormatting?.nextBase = base }
+                var formatted = punctuationMode == .fast ? HaasPunctuationFormatter.fast(base) : base
+                if attachesHeldPeriod { formatted = HaasPunctuationFormatter.attachingHeldPeriod(to: formatted) }
+                let split = HaasPunctuationFormatter.splittingHeldPeriod(formatted)
+                transcript.finalize(id: id, text: split.body)
+                delivery.accept(sessionID: sessionID, itemID: id, text: split.body)
+                if split.held { heldPeriodItemID = id }
             } else {
                 let requestID = UUID()
-                guard delivery.accept(sessionID: sessionID, itemID: id, text: base, formattingHoldID: requestID) else {
-                    transcript.finalize(id: id, text: base)
+                let delivered = attachesHeldPeriod ? HaasPunctuationFormatter.attachingHeldPeriod(to: base) : base
+                guard delivery.accept(sessionID: sessionID, itemID: id, text: delivered, formattingHoldID: requestID) else {
+                    transcript.finalize(id: id, text: delivered)
                     publishPreview()
                     return
                 }
-                pendingFormatting = PendingFormatting(requestID: requestID, itemID: id, text: base)
+                pendingFormatting = PendingFormatting(
+                    requestID: requestID, itemID: id, deliveredText: delivered,
+                    attachesHeldPeriod: attachesHeldPeriod)
                 if !punctuationWorker.submit(base, requestID: requestID, receivedAt: receivedAt,
                     protectedTerms: protectedTerms.filter(base.contains), completion: { [weak self] candidate in
                     self?.completeFormatting(requestID: requestID, candidate: candidate)
@@ -225,11 +252,26 @@ final class HaasDictationSession {
         guard !isCancelled, !isFinished, failure == nil,
             let pending = pendingFormatting, pending.requestID == requestID
         else { return }
-        let text = candidate ?? pending.text
+        var text = pending.deliveredText
+        if let candidate {
+            text = pending.attachesHeldPeriod ? HaasPunctuationFormatter.attachingHeldPeriod(to: candidate) : candidate
+        }
+        let split = HaasPunctuationFormatter.splittingHeldPeriod(text)
+        var holdsPeriod = false
+        if split.held {
+            if let nextBase = pending.nextBase {
+                if !HaasPunctuationFormatter.startsSentence(nextBase) { text = split.body }
+            } else {
+                text = split.body
+                holdsPeriod = true
+            }
+        }
         let applied = delivery.completeHeldFormatting(
             sessionID: sessionID, itemID: pending.itemID, requestID: requestID, text: text
         )
-        transcript.finalize(id: pending.itemID, text: applied ? text : pending.text)
+        // 台帳に残らなかった文で記録を確定しない。false なら accept の時の文が台帳に残っている
+        transcript.finalize(id: pending.itemID, text: applied ? text : pending.deliveredText)
+        if applied, holdsPeriod { heldPeriodItemID = pending.itemID }
         pendingFormatting = nil
         resumeFormattingWaiters()
         publishPreview()
@@ -239,8 +281,25 @@ final class HaasDictationSession {
         guard let pending = pendingFormatting else { return }
         pendingFormatting = nil
         punctuationWorker.cancel(requestID: pending.requestID)
-        transcript.finalize(id: pending.itemID, text: pending.text)
+        transcript.finalize(id: pending.itemID, text: pending.deliveredText)
         resumeFormattingWaiters()
+    }
+
+    /// 保留中の「。」を、次の区切りの整形前の文で解く。付けるなら true
+    private func resolveHeldPeriod(nextBase: String) -> Bool {
+        guard heldPeriodItemID != nil else { return false }
+        heldPeriodItemID = nil
+        return HaasPunctuationFormatter.startsSentence(nextBase)
+    }
+
+    /// 録音を止めたときに残っている「。」を、文が「。」だけの区切りとして受け渡す。配送が止まっていても台帳には入る
+    private func deliverHeldPeriod() {
+        guard let itemID = heldPeriodItemID else { return }
+        heldPeriodItemID = nil
+        let id = itemID + "-period"
+        guard transcript.appendHeldPeriod(id: id) else { return }
+        delivery.accept(sessionID: sessionID, itemID: id, text: "。")
+        publishPreview()
     }
 
     private func waitForFormatting() async {

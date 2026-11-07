@@ -608,7 +608,7 @@ final class HaasInputDeliveryTests: XCTestCase {
 }
 
 @MainActor
-private final class DeliveryFixture {
+final class DeliveryFixture {
     let root: URL
     let fileURL: URL
     let defaults: UserDefaults
@@ -647,7 +647,7 @@ private final class DeliveryFixture {
 }
 
 @MainActor
-private struct AvailableInputTarget: HaasInputTargetChecking {
+struct AvailableInputTarget: HaasInputTargetChecking {
     let diagnosticAppIdentifier = "test.destination"
     func rejectionReason() -> String? { nil }
 }
@@ -700,12 +700,12 @@ private final class SwitchableInputTarget: HaasInputTargetChecking {
 }
 
 @MainActor
-private final class CapturedTargetBox {
+final class CapturedTargetBox {
     var target: (any HaasInputTargetChecking)?
 }
 
 @MainActor
-private final class ControlledTextPaster: HaasTextPasting {
+final class ControlledTextPaster: HaasTextPasting {
     struct Call {
         let text: String
         let shouldPaste: () -> Bool
@@ -738,7 +738,7 @@ private final class ControlledTextPaster: HaasTextPasting {
 }
 
 @MainActor
-private final class FakeInputWatcher: HaasInputWatching {
+final class FakeInputWatcher: HaasInputWatching {
     private(set) var startCount = 0
     private(set) var invalidateCount = 0
     private(set) var lastToken: UUID?
