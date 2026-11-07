@@ -268,6 +268,10 @@ final class HaasPunctuationWorkerTests: XCTestCase {
             XCTAssertEqual(results, [.formatted(expected)], original)
         }
     }
+
+    func testPromptFramesTranscriptSoTheModelDoesNotReplyToIt() {
+        XCTAssertEqual(HaasPunctuationPrompt.wrapping("明日の予定を教えてください"), "書き起こし: 明日の予定を教えてください\n出力:")
+    }
 }
 
 private enum InjectedGenerationError: Error { case failed }

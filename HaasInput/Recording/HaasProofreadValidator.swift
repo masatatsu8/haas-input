@@ -16,6 +16,8 @@ enum HaasProofreadValidator {
         let strippedCandidate = Array(stripPunctuation(normalizedCandidate))
         let allowance = max(minimumEditAllowance, Int(Double(strippedOriginal.count) * maximumEditRatio))
         guard editDistance(strippedOriginal, strippedCandidate) <= allowance else { return nil }
+        // 文末に問いの「か」を足すと、言い切りの文が問いに変わる。誤字の直しとしては認めない
+        guard !endsWithQuestionKa(strippedCandidate) || endsWithQuestionKa(strippedOriginal) else { return nil }
 
         guard foreignRuns(in: normalizedOriginal) == foreignRuns(in: normalizedCandidate) else { return nil }
 
@@ -25,6 +27,18 @@ enum HaasProofreadValidator {
         let result = HaasPunctuationFormatter.removingPeriodAfterUnfinishedEnding(candidate, original: original)
         if hasContent(original), !hasContent(result) { return nil }
         return result
+    }
+
+    /// 文末の空白・「?」「!」・閉じ括弧を除いて、ひらがなの後の「か」で終わるか。
+    /// 「ですか」「ますか」などの問いの「か」とみなす。「静か」のように漢字に続く「か」は語の一部として扱う
+    private static func endsWithQuestionKa(_ characters: [Character]) -> Bool {
+        let body = characters.reversed().drop {
+            $0.isWhitespace || $0 == "?" || $0 == "!"
+                || $0.unicodeScalars.allSatisfy(HaasPunctuationFormatter.closingMarks.contains)
+        }
+        var iterator = body.makeIterator()
+        guard iterator.next() == "か", let previous = iterator.next() else { return false }
+        return previous.unicodeScalars.allSatisfy { (0x3041...0x3096).contains($0.value) }
     }
 
     private static func hasContent(_ text: String) -> Bool {

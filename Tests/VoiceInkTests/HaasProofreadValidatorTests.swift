@@ -56,6 +56,36 @@ final class HaasProofreadValidatorTests: XCTestCase {
             "合っていますか？次に進みます。")
     }
 
+    func testRejectsStatementTurnedIntoQuestionByAddingKa() {
+        // 端末内モデルが、言い切りの文に「か」を足して問いに変えることがある。誤字の直しとは認めない
+        for (candidate, original) in [
+            ("今日は会議がありますか？", "今日は会議があります"),
+            ("書き起こしの精度を上げたいですか？", "書き起こしの精度を上げたいです"),
+            ("まずリポジトリを確認してそれからビルドしますか。", "まずリポジトリを確認してそれからビルドします"),
+            // 別の場所の「か」を消して、数をそろえても問いに変える
+            ("どこに資料を保存しますか？", "どこかに資料を保存します"),
+            // 閉じ括弧の内側で問いに変える
+            ("「今日は会議がありますか？」", "「今日は会議があります」"),
+        ] {
+            XCTAssertNil(HaasProofreadValidator.validatedCandidate(candidate, preserving: original, protectedTerms: []), original)
+        }
+    }
+
+    func testAcceptsCorrectionsThatAddKaInsideSentence() {
+        for (candidate, original) in [
+            ("よく分かりませんので、説明してください。", "よく分りませんので説明してください"),
+            ("保存してから確認します。", "保存してら確認します"),
+            ("静かなので、ここで話します。", "静なのでここで話します"),
+            // 文末でも、漢字に続く「か」は語の一部
+            ("この部屋はとても静か。", "この部屋はとても静"),
+            // もとから問いの文は、括弧の中でもそのまま認める
+            ("「これで合っていますか？」", "「これで合っていますか」"),
+        ] {
+            XCTAssertEqual(HaasProofreadValidator.validatedCandidate(candidate, preserving: original, protectedTerms: []),
+                candidate, original)
+        }
+    }
+
     func testRejectsLargeRewritesAndAddedLines() {
         XCTAssertNil(HaasProofreadValidator.validatedCandidate(
             "会議は延期です。", preserving: "来週の打ち合わせは火曜日の午後に変更になりました", protectedTerms: []))
