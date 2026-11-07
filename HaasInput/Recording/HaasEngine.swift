@@ -77,6 +77,8 @@ final class HaasEngine: ObservableObject {
 
     let recorder: any HaasAudioRecording
     let modelContext: ModelContext
+    /// 利用統計の記録先。nil なら記録しない。
+    private let usageRecorder: HaasUsageRecorder?
     let inputDelivery: HaasInputDelivery
 
     @MainActor
@@ -118,9 +120,11 @@ final class HaasEngine: ObservableObject {
         recorder: (any HaasAudioRecording)? = nil,
         sessionFactory: HaasSessionFactory? = nil,
         inputDelivery: HaasInputDelivery? = nil,
-        recordingsDirectory: URL? = nil
+        recordingsDirectory: URL? = nil,
+        usageRecorder: HaasUsageRecorder? = nil
     ) {
         self.modelContext = modelContext
+        self.usageRecorder = usageRecorder
         self.recorder = recorder ?? Recorder()
         self.sessionFactory = sessionFactory ?? Self.makeLiveSession
         self.inputDelivery = inputDelivery ?? .shared
@@ -231,6 +235,7 @@ final class HaasEngine: ObservableObject {
             try modelContext.save()
             hasUnsavedHistory = false
             linkSavedHistory()
+            usageRecorder?.sync(from: modelContext)
             errorMessage = nil
         } catch {
             logger.error("History save retry failed: \(String(reflecting: error), privacy: .private)")
@@ -387,6 +392,8 @@ final class HaasEngine: ObservableObject {
             do {
                 try modelContext.save()
                 linkSavedHistory()
+                // 履歴の自動削除より前に、本文なしの利用記録を残す
+                usageRecorder?.sync(from: modelContext)
             } catch {
                 hasUnsavedHistory = true
                 logger.error("History save failed: \(String(reflecting: error), privacy: .private)")

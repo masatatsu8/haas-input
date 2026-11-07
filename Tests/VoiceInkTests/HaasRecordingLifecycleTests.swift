@@ -341,6 +341,33 @@ final class HaasRecordingLifecycleTests: XCTestCase {
         await engine.cancelRecording()
     }
 
+    func testCompletedRecordingIsRecordedInUsageStatistics() async throws {
+        let fixture = try EngineFixture(recordsUsage: true)
+        defer { fixture.cleanUp() }
+        try await completeRecording(fixture, text: "資料を送ります")
+        let recorder = try XCTUnwrap(fixture.usageRecorder)
+        XCTAssertEqual(recorder.samples.count, 1)
+        XCTAssertEqual(recorder.samples.first?.characters, 7)
+    }
+
+    func testUsageStatisticsSurviveImmediateHistoryCleanup() async throws {
+        let fixture = try EngineFixture(recordsUsage: true)
+        defer { fixture.cleanUp() }
+        UserDefaults.standard.set(true, forKey: CleanupSettingsKeys.isTranscriptionCleanupEnabled)
+        UserDefaults.standard.set(0, forKey: CleanupSettingsKeys.transcriptionRetentionMinutes)
+        try await completeRecording(fixture, text: "一回目の文章")
+        try await completeRecording(fixture, text: "二回目の文章")
+        XCTAssertTrue(try fixture.rows().isEmpty)
+        XCTAssertEqual(try XCTUnwrap(fixture.usageRecorder).samples.count, 2)
+    }
+
+    private func completeRecording(_ fixture: EngineFixture, text: String) async throws {
+        let id = try await beginRecording(fixture)
+        try XCTUnwrap(fixture.sessions.last).emitCommitted(text)
+        fixture.engine.finishHeldShortcutRecording(recordingID: id)
+        await waitUntil { fixture.engine.recordingState == .idle }
+    }
+
     private func beginRecording(_ fixture: EngineFixture) async throws -> UUID {
         let id = try XCTUnwrap(fixture.engine.startHeldRecording())
         await waitUntil { fixture.engine.recordingState == .recording }
@@ -367,6 +394,7 @@ private final class EngineFixture {
     let delivery: HaasInputDelivery
     var sessions: [ControlledRecordingSession] = []
     var configureSession: ((ControlledRecordingSession) -> Void)?
+    let usageRecorder: HaasUsageRecorder?
     private let oldPreferences: [(String, Any?)]
 
     lazy var engine = HaasEngine(
@@ -379,10 +407,11 @@ private final class EngineFixture {
             return session
         },
         inputDelivery: delivery,
-        recordingsDirectory: root.appendingPathComponent("Recordings", isDirectory: true)
+        recordingsDirectory: root.appendingPathComponent("Recordings", isDirectory: true),
+        usageRecorder: usageRecorder
     )
 
-    init() throws {
+    init(recordsUsage: Bool = false) throws {
         guard Bundle.main.bundleIdentifier == "com.tatsumi.VoiceInkHaas.TestsHost" else {
             throw CocoaError(.fileReadNoPermission)
         }
@@ -390,15 +419,19 @@ private final class EngineFixture {
         recoveryURL = root.appendingPathComponent("recovery/state.json")
         suite = "HaasEngineTests.\(UUID().uuidString)"
         defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        let schema = Schema([Transcription.self, WordReplacement.self])
+        let schema = Schema(recordsUsage
+            ? [Transcription.self, WordReplacement.self, SessionMetric.self]
+            : [Transcription.self, WordReplacement.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         container = try ModelContainer(for: schema, configurations: configuration)
+        usageRecorder = recordsUsage ? HaasUsageRecorder(container: container) : nil
         delivery = HaasInputDelivery(
             store: HaasRecoveryStore(fileURL: recoveryURL, legacyDefaults: defaults), textPaster: NoInputPaster()
         )
         let persistent = UserDefaults.standard.persistentDomain(forName: "com.tatsumi.VoiceInkHaas.TestsHost") ?? [:]
         let keys = [HaasPunctuationMode.settingsKey, CleanupSettingsKeys.isTranscriptionCleanupEnabled,
-                    CleanupSettingsKeys.isAudioCleanupEnabled]
+                    CleanupSettingsKeys.isAudioCleanupEnabled,
+                    CleanupSettingsKeys.transcriptionRetentionMinutes]
         oldPreferences = keys.map { ($0, persistent[$0]) }
         UserDefaults.standard.set(false, forKey: CleanupSettingsKeys.isTranscriptionCleanupEnabled)
         UserDefaults.standard.set(false, forKey: CleanupSettingsKeys.isAudioCleanupEnabled)
