@@ -7,6 +7,7 @@ final class CursorPasterReplacementTests: XCTestCase {
         var checks: [Int] = []
         var backspaces = 0
         var pastes = 0
+        var events: [String] = []
     }
 
     private func run(
@@ -20,15 +21,18 @@ final class CursorPasterReplacementTests: XCTestCase {
             deleteCount: deleteCount,
             shouldContinue: { deleted in
                 recorder.checks.append(deleted)
+                recorder.events.append("check\(deleted)")
                 return deleted != stopAtCheck
             },
             postBackspace: {
                 if recorder.backspaces == failBackspaceAt { return false }
                 recorder.backspaces += 1
+                recorder.events.append("backspace")
                 return true
             },
             paste: {
                 recorder.pastes += 1
+                recorder.events.append("paste")
                 return pasteResult
             }
         )
@@ -71,6 +75,8 @@ final class CursorPasterReplacementTests: XCTestCase {
         let recorder = Recorder()
         let outcome = await run(failBackspaceAt: 2, recorder: recorder)
         XCTAssertEqual(outcome, .deletionInterrupted(deleted: 2))
+        XCTAssertEqual(recorder.checks, [0, 1, 2])
+        XCTAssertEqual(recorder.backspaces, 2)
         XCTAssertEqual(recorder.pastes, 0)
     }
 
@@ -86,7 +92,15 @@ final class CursorPasterReplacementTests: XCTestCase {
         let recorder = Recorder()
         let outcome = await run(recorder: recorder)
         XCTAssertEqual(outcome, .completed)
-        XCTAssertEqual(recorder.checks.last, 3)
-        XCTAssertEqual(recorder.checks.count, 4)
+        XCTAssertEqual(
+            recorder.events,
+            ["check0", "backspace", "check1", "backspace", "check2", "backspace", "check3", "paste"])
+    }
+
+    func testZeroDeleteCountChecksOnceThenPastes() async {
+        let recorder = Recorder()
+        let outcome = await run(deleteCount: 0, recorder: recorder)
+        XCTAssertEqual(outcome, .completed)
+        XCTAssertEqual(recorder.events, ["check0", "paste"])
     }
 }

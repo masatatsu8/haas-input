@@ -43,18 +43,27 @@ final class CursorPaster {
         _ text: String, shouldPaste: @escaping () -> Bool
     ) -> Task<PasteOutcome, Never> {
         let requestedAt = ProcessInfo.processInfo.systemUptime
+        return enqueueSession {
+            await performPasteSession(text, requestedAt: requestedAt, shouldPaste: shouldPaste)
+        }
+    }
+
+    /// 貼り付けの列に1件並べ、前の件とクリップボードの復元が終わってから始める
+    @MainActor
+    private static func enqueueSession<Outcome>(
+        _ session: @escaping @MainActor () async -> (outcome: Outcome, clipboardRestoreTask: Task<Void, Never>?)
+    ) -> Task<Outcome, Never> {
         let previousPasteTask = pasteQueueTask
         let sessionTask = Task { @MainActor in
             await previousPasteTask?.value
-            return await performPasteSession(text, requestedAt: requestedAt, shouldPaste: shouldPaste)
+            return await session()
         }
         pasteQueueTask = Task { @MainActor in
-            let session = await sessionTask.value
-            await session.clipboardRestoreTask?.value
+            let finished = await sessionTask.value
+            await finished.clipboardRestoreTask?.value
         }
         return Task { @MainActor in
-            let session = await sessionTask.value
-            return session.outcome
+            await sessionTask.value.outcome
         }
     }
 
@@ -68,18 +77,9 @@ final class CursorPaster {
         shouldContinue: @escaping (_ deleted: Int) -> Bool,
         pasteGuard: @escaping () -> Bool
     ) -> Task<HaasReplaceOutcome, Never> {
-        let previousPasteTask = pasteQueueTask
-        let sessionTask = Task { @MainActor in
-            await previousPasteTask?.value
-            return await performReplaceSession(
+        enqueueSession {
+            await performReplaceSession(
                 text, deleteCount: deleteCount, shouldContinue: shouldContinue, pasteGuard: pasteGuard)
-        }
-        pasteQueueTask = Task { @MainActor in
-            let session = await sessionTask.value
-            await session.clipboardRestoreTask?.value
-        }
-        return Task { @MainActor in
-            await sessionTask.value.outcome
         }
     }
 
@@ -89,20 +89,10 @@ final class CursorPaster {
         shouldContinue: @escaping (_ deleted: Int) -> Bool,
         pasteGuard: @escaping () -> Bool
     ) async -> (outcome: HaasReplaceOutcome, clipboardRestoreTask: Task<Void, Never>?) {
-        let sessionID = UUID().uuidString
-        let pasteboard = NSPasteboard.general
         // 削除より前に、元のクリップボードを保存して貼る文を準備する
-        let savedContents = snapshotClipboard(from: pasteboard)
-        guard ClipboardManager.setClipboard(text, transient: true, sessionID: sessionID) else {
-            logger.error("Failed to prepare clipboard for replacement id=\(sessionID, privacy: .public)")
-            return (.notStarted, nil)
-        }
-        let preparedClipboardChangeCount = pasteboard.changeCount
-        let ownsClipboard: () -> Bool = {
-            pasteboardStillOwnedByPasteSession(
-                pasteboard, expectedText: text, sessionID: sessionID,
-                expectedChangeCount: preparedClipboardChangeCount)
-        }
+        guard let clipboard = prepareClipboard(for: text) else { return (.notStarted, nil) }
+        let sessionID = clipboard.sessionID
+        let ownsClipboard = clipboard.isStillOwned
         await wait(prePasteDelay)
 
         let pasteRejection: () -> PasteResult? = {
@@ -117,11 +107,7 @@ final class CursorPaster {
             paste: { await pasteFromClipboard(sessionID: sessionID, pasteRejection: pasteRejection) }
         )
         logger.notice("Replace id=\(sessionID, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
-        let restore = scheduleClipboardRestore(
-            savedContents, expectedText: text, sessionID: sessionID,
-            expectedChangeCount: preparedClipboardChangeCount, on: pasteboard
-        )
-        return (outcome, restore)
+        return (outcome, clipboard.scheduleRestore())
     }
 
     /// 消す手順の本体。Backspace の前ごと、貼り付けの直前に shouldContinue で止められる。貼り付けの後は確認しない
@@ -170,22 +156,15 @@ final class CursorPaster {
     ) async -> (outcome: PasteOutcome, clipboardRestoreTask: Task<Void, Never>?) {
         let startedAt = ProcessInfo.processInfo.systemUptime
         let queueWaitMs = elapsedMilliseconds(since: requestedAt)
-        let sessionID = UUID().uuidString
         guard shouldPaste() else { return (PasteOutcome(result: .commandNotPosted), nil) }
-        let pasteboard = NSPasteboard.general
-        let savedContents = snapshotClipboard(from: pasteboard)
-        guard ClipboardManager.setClipboard(text, transient: true, sessionID: sessionID) else {
-            logger.error("Failed to prepare clipboard for paste id=\(sessionID, privacy: .public)")
+        guard let clipboard = prepareClipboard(for: text) else {
             return (PasteOutcome(result: .commandNotPosted), nil)
         }
-        let preparedClipboardChangeCount = pasteboard.changeCount
+        let sessionID = clipboard.sessionID
         await wait(prePasteDelay)
 
         let pasteRejection: () -> PasteResult? = {
-            guard pasteboardStillOwnedByPasteSession(
-                pasteboard, expectedText: text, sessionID: sessionID,
-                expectedChangeCount: preparedClipboardChangeCount
-            ) else { return .clipboardChanged }
+            guard clipboard.isStillOwned() else { return .clipboardChanged }
             return shouldPaste() ? nil : .commandNotPosted
         }
         let appIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "unknown"
@@ -197,11 +176,44 @@ final class CursorPaster {
             result = await pasteFromClipboard(sessionID: sessionID, pasteRejection: pasteRejection)
         }
         logger.notice("Paste id=\(sessionID, privacy: .public) app=\(appIdentifier, privacy: .public) commandPosted=\(result.didPostPasteCommand, privacy: .public) queueMs=\(queueWaitMs, privacy: .public) elapsedMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)")
-        let restore = scheduleClipboardRestore(
-            savedContents, expectedText: text, sessionID: sessionID,
-            expectedChangeCount: preparedClipboardChangeCount, on: pasteboard
-        )
-        return (PasteOutcome(result: result), restore)
+        return (PasteOutcome(result: result), clipboard.scheduleRestore())
+    }
+
+    /// 貼る文を載せたクリップボードの状態。貼り付けと置き換えの両方が同じ規則で準備・確認・復元する
+    private struct PreparedClipboard {
+        let text: String
+        let sessionID: String
+        let savedContents: ClipboardSnapshot
+        let changeCount: Int
+        let pasteboard: NSPasteboard
+
+        /// このセッションが載せた内容のままか
+        func isStillOwned() -> Bool {
+            CursorPaster.pasteboardStillOwnedByPasteSession(
+                pasteboard, expectedText: text, sessionID: sessionID, expectedChangeCount: changeCount)
+        }
+
+        @MainActor
+        func scheduleRestore() -> Task<Void, Never> {
+            CursorPaster.scheduleClipboardRestore(
+                savedContents, expectedText: text, sessionID: sessionID,
+                expectedChangeCount: changeCount, on: pasteboard)
+        }
+    }
+
+    /// 元の内容を保存してから text を載せる。載せられなければ nil
+    @MainActor
+    private static func prepareClipboard(for text: String) -> PreparedClipboard? {
+        let sessionID = UUID().uuidString
+        let pasteboard = NSPasteboard.general
+        let savedContents = snapshotClipboard(from: pasteboard)
+        guard ClipboardManager.setClipboard(text, transient: true, sessionID: sessionID) else {
+            logger.error("Failed to prepare clipboard for paste id=\(sessionID, privacy: .public)")
+            return nil
+        }
+        return PreparedClipboard(
+            text: text, sessionID: sessionID, savedContents: savedContents,
+            changeCount: pasteboard.changeCount, pasteboard: pasteboard)
     }
 
     private static func snapshotClipboard(from pasteboard: NSPasteboard) -> ClipboardSnapshot {

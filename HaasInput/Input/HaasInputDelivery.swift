@@ -177,7 +177,7 @@ struct HaasPasteTarget: HaasInputTargetChecking {
 }
 
 extension HaasFieldState {
-    /// AX の値と選択範囲 (UTF-16 の位置) から作る。範囲が値の外や文字の途中なら .unreadable
+    /// AX の値と選択範囲 (UTF-16 の位置) から作る。範囲が値の外や Unicode スカラーの途中なら .unreadable
     static func make(value: String, selectedRange: CFRange) -> HaasFieldState {
         let units = value.utf16.count
         guard selectedRange.location >= 0, selectedRange.length >= 0,
