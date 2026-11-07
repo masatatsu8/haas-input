@@ -8,6 +8,15 @@ final class HaasProofreadValidatorTests: XCTestCase {
             "このアプリは音声を端末内で処理します。")
     }
 
+    func testAcceptsQuestionMarkAddedToQuestion() {
+        XCTAssertEqual(HaasProofreadValidator.validatedCandidate(
+            "これで合っていますか？", preserving: "これで合っていますか", protectedTerms: []),
+            "これで合っていますか？")
+        XCTAssertEqual(HaasProofreadValidator.validatedCandidate(
+            "これは端末内で処理しますか？", preserving: "これは端末ないで処理しますか", protectedTerms: []),
+            "これは端末内で処理しますか？")
+    }
+
     func testRejectsLargeRewritesAndAddedLines() {
         XCTAssertNil(HaasProofreadValidator.validatedCandidate(
             "会議は延期です。", preserving: "来週の打ち合わせは火曜日の午後に変更になりました", protectedTerms: []))

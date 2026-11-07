@@ -2,6 +2,7 @@ import Foundation
 
 enum HaasPunctuationFormatter {
     private static let sentenceEndings = ["です", "ます", "でした", "ました", "ません", "ください"]
+    private static let questionEndings = ["ですか", "ますか", "でしょうか", "ませんか", "でしたか", "ましたか"]
     static let unfinishedEndings = ["ので", "ですが", "あとで", "けれども", "けれど", "けど", "のに", "ながら"]
     private static let punctuation = Set("、。，．,.!?！？".unicodeScalars)
     private static let openingMarks = Set("「『（([{【〈《“‘\"'".unicodeScalars)
@@ -11,8 +12,15 @@ enum HaasPunctuationFormatter {
         let scalars = Array(text.unicodeScalars)
         let end = scalars.lastIndex { !CharacterSet.whitespacesAndNewlines.contains($0) }.map { $0 + 1 } ?? 0
         let body = String(String.UnicodeScalarView(scalars[..<end]))
-        guard sentenceEndings.contains(where: body.hasSuffix) else { return text }
-        let candidate = body + "。" + String(String.UnicodeScalarView(scalars[end...]))
+        let mark: String
+        if questionEndings.contains(where: body.hasSuffix) {
+            mark = "？"
+        } else if sentenceEndings.contains(where: body.hasSuffix) {
+            mark = "。"
+        } else {
+            return text
+        }
+        let candidate = body + mark + String(String.UnicodeScalarView(scalars[end...]))
         return validatedCandidate(candidate, preserving: text) ?? text
     }
 
@@ -37,7 +45,8 @@ enum HaasPunctuationFormatter {
                 consumed += 1
                 continue
             }
-            guard scalar == "、" || scalar == "。", characterBoundaries.contains(consumed) else { return nil }
+            guard scalar == "、" || scalar == "。" || scalar == "？", characterBoundaries.contains(consumed) else { return nil }
+            if scalar == "？", consumed == 0 || source[consumed - 1] != "か" { return nil }
             if consumed > 0, consumed < source.count,
                 isLatinIdentifierScalar(source[consumed - 1]), isLatinIdentifierScalar(source[consumed])
             { return nil }

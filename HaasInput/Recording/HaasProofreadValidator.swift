@@ -26,8 +26,12 @@ enum HaasProofreadValidator {
         return result
     }
 
+    private static func isSentencePunctuation(_ character: Character) -> Bool {
+        character == "、" || character == "。" || character == "？" || character == "?"
+    }
+
     private static func hasContent(_ text: String) -> Bool {
-        text.contains { !$0.isWhitespace && $0 != "、" && $0 != "。" }
+        text.contains { !$0.isWhitespace && !isSentencePunctuation($0) }
     }
 
     /// 続きがある語尾の原文には、モデルが付けた末尾の「。」を残さない。
@@ -63,7 +67,7 @@ enum HaasProofreadValidator {
     }
 
     private static func stripPunctuation(_ text: String) -> String {
-        text.filter { $0 != "、" && $0 != "。" }
+        text.filter { !isSentencePunctuation($0) }
     }
 
     private static func isJapanese(_ scalar: Unicode.Scalar) -> Bool {
@@ -76,7 +80,7 @@ enum HaasProofreadValidator {
     }
 
     private static func isSeparator(_ character: Character) -> Bool {
-        character.isWhitespace || character == "、" || character == "。"
+        character.isWhitespace || isSentencePunctuation(character)
             || character.unicodeScalars.allSatisfy(isJapanese)
     }
 
