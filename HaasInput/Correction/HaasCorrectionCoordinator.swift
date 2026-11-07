@@ -41,6 +41,8 @@ final class HaasCorrectionCoordinator: ObservableObject {
         let watchToken: UUID?
         /// 値があれば、入力先の状態にかかわらずコピーだけにする
         let forcedCopyReason: HaasCopyReason?
+        /// 直した文をまだクリップボードに入れられていない。同じ文で確定しても、コピーだけやり直す
+        var copyPending = false
     }
 
     /// begin から confirm / cancel までに保つ状態
@@ -105,6 +107,8 @@ final class HaasCorrectionCoordinator: ObservableObject {
 
     /// ポップアップを出す前 (自分の窓が key になる前) に呼ぶ。録音中・認識中や、直す文がなければ nil
     func begin() -> HaasCorrectionDraft? {
+        // 開けなかったときに、前の状態を確定できないようにする
+        session = nil
         guard isIdle() else { return nil }
         let returnTarget = captureReturnTarget()
         guard let input = currentInput() else { return nil }
@@ -137,13 +141,19 @@ final class HaasCorrectionCoordinator: ObservableObject {
     func confirm(
         _ draft: HaasCorrectionDraft, corrected: String, register: [HaasDictionarySuggestion]
     ) async -> HaasCorrectionOutcome {
-        let current = session?.draft == draft ? session : nil
+        let closing = session
         session = nil
-        // 閉じたら、置き換えない経路も含めて必ず戻り先へ戻す
-        _ = current?.returnTarget?.activate()
+        // 閉じたら、置き換えない経路や draft が合わないときも含めて、必ず戻り先へ戻す
+        _ = closing?.returnTarget?.activate()
+        let current = closing?.draft == draft ? closing : nil
 
         guard !corrected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return HaasCorrectionOutcome(result: .failed(Self.emptyMessage), dictionaryErrors: [], historyError: nil)
+        }
+        if let current, current.input.copyPending, corrected == draft.originalText {
+            // 前回コピーできなかった直した文。辞書と履歴は済んでいるので、コピーだけやり直す
+            let result = copy(corrected, session: current, message: Self.copiedMessage)
+            return HaasCorrectionOutcome(result: result, dictionaryErrors: [], historyError: nil)
         }
         guard corrected != draft.originalText else {
             return HaasCorrectionOutcome(result: .unchanged, dictionaryErrors: [], historyError: nil)
@@ -163,7 +173,8 @@ final class HaasCorrectionCoordinator: ObservableObject {
                 sessionID: carried.sessionID,
                 transcriptionID: delivered?.transcriptionID ?? carried.transcriptionID,
                 text: carried.text, allSegmentsPosted: carried.allSegmentsPosted, target: carried.target,
-                watchToken: carried.watchToken, forcedCopyReason: carried.forcedCopyReason)
+                watchToken: carried.watchToken, forcedCopyReason: carried.forcedCopyReason,
+                copyPending: carried.copyPending)
         }
         if let delivered {
             // 新しい録音の記録が来たら、前の訂正で持っていた入力は使わない
@@ -264,16 +275,17 @@ final class HaasCorrectionCoordinator: ObservableObject {
         return .replaced
     }
 
+    /// 置き換えを完了しなかった経路の終わり。直した文をコピーし、次に開いたときは直した文から始める。
+    /// 入力先の中身は直した文と確かめられない (元のまま、または途中まで消えている) ので、置き換えはしない
     private func copy(_ corrected: String, session: Session?, message: String) -> HaasCorrectionResult {
-        if replacer.copy(corrected) { return .copied(message) }
-        // コピーできなければ、次に開いたとき直した文から始める。入力先の中身は直した文ではないので置き換えない
+        let copied = replacer.copy(corrected)
         if let input = session?.input {
             carried = LastInput(
                 sessionID: input.sessionID, transcriptionID: input.transcriptionID, text: corrected,
-                allSegmentsPosted: input.allSegmentsPosted, target: input.target, watchToken: input.watchToken,
-                forcedCopyReason: .noRecord)
+                allSegmentsPosted: false, target: nil, watchToken: nil, forcedCopyReason: .alreadyCorrected,
+                copyPending: !copied)
         }
-        return .failed(Self.copyFailedMessage)
+        return copied ? .copied(message) : .failed(Self.copyFailedMessage)
     }
 
     // MARK: - 辞書

@@ -19,6 +19,8 @@ struct HaasReplacementContext: Equatable {
 enum HaasCopyReason: Equatable {
     case noRecord, notAllPosted, userInputDetected, targetChanged
     case selectionNotEmpty, textMismatch, multiline, tooLong
+    /// 訂正の後で、入力先の中身が直した文と確かめられない (decide は返さない)
+    case alreadyCorrected
 }
 
 /// 置き換えの方式。確かめられない場合は必ずコピーのみにする

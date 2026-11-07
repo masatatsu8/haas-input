@@ -87,6 +87,11 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         XCTAssertTrue(fixture.replacer.calls.isEmpty)
         XCTAssertEqual(fixture.replacer.copies, ["巽です"])
         XCTAssertEqual(field.text, "たつみです")
+
+        // 次に開くと直した文から始め、入力先の中身は直した文ではないのでコピーだけにする
+        let next = try XCTUnwrap(fixture.coordinator.begin())
+        XCTAssertEqual(next.originalText, "巽です")
+        XCTAssertEqual(next.decision, .copyOnly(.alreadyCorrected))
     }
 
     func testInterruptedReplacementCopiesAndDisablesRetry() async throws {
@@ -106,10 +111,10 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
             XCTAssertEqual(fixture.replacer.calls.count, 1)
             // 置き換えの手順はクリップボードを元に戻すので、必ずコピーし直す
             XCTAssertEqual(fixture.replacer.copies, ["巽です"], "\(replaceOutcome)")
+            // 欄は途中まで消えていて、履歴は直した文なので、直した文から始めてコピーだけにする
             let next = try XCTUnwrap(fixture.coordinator.begin())
-            guard case .copyOnly = next.decision else {
-                return XCTFail("同じ入力では二度と置き換えない: \(next.decision)")
-            }
+            XCTAssertEqual(next.originalText, "巽です", "\(replaceOutcome)")
+            XCTAssertEqual(next.decision, .copyOnly(.alreadyCorrected), "\(replaceOutcome)")
         }
     }
 
@@ -291,17 +296,83 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
     func testCopyFailureKeepsCorrectedText() async throws {
         let fixture = try CorrectionFixture()
         defer { fixture.cleanUp() }
+        let row = try fixture.addHistory(text: "たつみです")
         fixture.replacer.copyResult = false
-        fixture.deliver(text: "たつみです", field: nil)
+        fixture.deliver(text: "たつみです", field: nil, transcriptionID: row.id)
         let draft = try XCTUnwrap(fixture.coordinator.begin())
 
-        let outcome = await fixture.coordinator.confirm(draft, corrected: "巽です", register: [])
+        let outcome = await fixture.coordinator.confirm(
+            draft, corrected: "巽です", register: [newWord("巽", reading: "たつみ")])
 
         XCTAssertEqual(
             outcome.result, .failed("直した文をコピーできませんでした。もう一度開くと、直した文から始められます"))
+        XCTAssertEqual(fixture.settings.entries.map(\.writtenForm), ["巽"])
+        XCTAssertEqual(row.enhancedText, "巽です")
         let next = try XCTUnwrap(fixture.coordinator.begin())
         XCTAssertEqual(next.originalText, "巽です")
-        guard case .copyOnly = next.decision else { return XCTFail("コピーに失敗した文は置き換えない") }
+        XCTAssertEqual(next.decision, .copyOnly(.alreadyCorrected))
+    }
+
+    func testSameTextRetriesCopyAfterCopyFailure() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        let row = try fixture.addHistory(text: "たつみです")
+        fixture.replacer.copyResult = false
+        fixture.deliver(text: "たつみです", field: nil, transcriptionID: row.id)
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        _ = await fixture.coordinator.confirm(draft, corrected: "巽です", register: [newWord("巽", reading: "たつみ")])
+        // 書き戻しをやり直さないことを確かめるため、履歴を別の文にしておく
+        row.enhancedText = "履歴の画面で直した文"
+        try fixture.context.save()
+
+        fixture.replacer.copyResult = true
+        let retry = try XCTUnwrap(fixture.coordinator.begin())
+        let outcome = await fixture.coordinator.confirm(
+            retry, corrected: "巽です", register: [newWord("巽", reading: "たつみ")])
+
+        XCTAssertEqual(outcome, HaasCorrectionOutcome(result: .copied(copiedMessage), dictionaryErrors: [], historyError: nil))
+        XCTAssertEqual(fixture.replacer.copies, ["巽です", "巽です"])
+        XCTAssertTrue(fixture.replacer.calls.isEmpty)
+        XCTAssertEqual(fixture.settings.entries.map(\.writtenForm), ["巽"])
+        XCTAssertEqual(row.enhancedText, "履歴の画面で直した文")
+
+        // コピーできた後は、同じ文の確定は何もしない
+        let after = try XCTUnwrap(fixture.coordinator.begin())
+        let unchanged = await fixture.coordinator.confirm(after, corrected: "巽です", register: [])
+        XCTAssertEqual(unchanged.result, .unchanged)
+        XCTAssertEqual(fixture.replacer.copies.count, 2)
+    }
+
+    func testMismatchedDraftStillReturnsFocusAndOnlyCopies() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        fixture.deliver(text: "たつみです", field: FakeField(text: "たつみです"))
+        XCTAssertNotNil(fixture.coordinator.begin())
+        let other = HaasCorrectionDraft(originalText: "別の文", transcriptionID: nil, decision: .replaceAutomatically(deleteCount: 3))
+
+        let outcome = await fixture.coordinator.confirm(other, corrected: "巽です", register: [])
+
+        XCTAssertEqual(fixture.returnTarget.activateCount, 1)
+        XCTAssertTrue(fixture.replacer.calls.isEmpty)
+        XCTAssertEqual(outcome.result, .copied(copiedMessage))
+    }
+
+    func testFailedBeginClearsPreviousSession() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        let field = FakeField(text: "たつみです")
+        fixture.deliver(text: "たつみです", field: field)
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        fixture.idle = false
+        XCTAssertNil(fixture.coordinator.begin())
+
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "巽です", register: [])
+
+        // 古い状態では置き換えず、コピーだけにする
+        XCTAssertTrue(fixture.replacer.calls.isEmpty)
+        XCTAssertEqual(fixture.replacer.copies, ["巽です"])
+        XCTAssertEqual(outcome.result, .copied(copiedMessage))
+        XCTAssertEqual(field.text, "たつみです")
     }
 
     func testSuggestionsCompareWithShownText() throws {
