@@ -117,14 +117,14 @@ final class HaasCorrectionCoordinator: ObservableObject {
         guard isIdle() else { return nil }
         let returnTarget = captureReturnTarget()
         guard let input = currentInput() else { return nil }
-        let (decision, field) = evaluate(input)
+        let decision = evaluate(input).0
         var expectation: HaasFieldExpectation?
-        if case .replaceAutomatically = decision, case let .readable(_, textAfterCaret, _) = field,
-            case let .readable(textBeforeInsertion)? = input.insertionBaseline
+        if case .replaceAutomatically = decision,
+            case let .readable(textBeforeInsertion, textAfterInsertion)? = input.insertionBaseline
         {
-            // カーソルの後ろは開いたときの中身で固定し、消している間に変われば止める
+            // カーソルの後ろは貼る前に記録した中身で固定し、消している間に変われば止める
             expectation = HaasFieldExpectation(
-                textBeforeInsertion: textBeforeInsertion, insertedText: input.text, textAfterCaret: textAfterCaret)
+                textBeforeInsertion: textBeforeInsertion, insertedText: input.text, textAfterCaret: textAfterInsertion)
         }
         let draft = HaasCorrectionDraft(
             originalText: input.text, transcriptionID: input.transcriptionID, decision: decision)

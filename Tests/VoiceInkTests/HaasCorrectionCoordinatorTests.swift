@@ -325,7 +325,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         defer { fixture.cleanUp() }
         // 文字数の上限で貼り付けが無視され、欄は元から「はい」で終わっている
         let field = FakeField(text: "はい")
-        fixture.deliver(text: "はい", field: field, baseline: .some(.readable(textBeforeInsertion: "はい")))
+        fixture.deliver(text: "はい", field: field, baseline: .some(.readable(textBeforeInsertion: "はい", textAfterInsertion: "")))
         let draft = try XCTUnwrap(fixture.coordinator.begin())
         XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
 
@@ -334,6 +334,25 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(outcome.result, .copied(copiedMessage))
         XCTAssertTrue(fixture.replacer.calls.isEmpty)
         XCTAssertEqual(field.text, "はい")
+    }
+
+    func testCaretMovedPastExistingSameTextOnlyCopies() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        // 貼る前は「前|はい後」。貼り付けが拒まれ、カーソルだけが「前はい|後」へ動いた
+        let field = FakeField(text: "前はい", after: "後")
+        fixture.deliver(
+            text: "はい", field: field, baseline: .some(.readable(textBeforeInsertion: "前", textAfterInsertion: "はい後")))
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
+
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "いいえ", register: [])
+
+        XCTAssertEqual(outcome.result, .copied(copiedMessage))
+        XCTAssertTrue(fixture.replacer.calls.isEmpty)
+        XCTAssertEqual(field.backspaces, 0)
+        XCTAssertEqual(field.text, "前はい")
+        XCTAssertEqual(field.after, "後")
     }
 
     func testReadableFieldWithoutInsertionRecordOnlyCopies() throws {
@@ -618,7 +637,8 @@ private final class CorrectionFixture {
             recorded = baseline
         } else if let field {
             recorded = field.readable
-                ? .readable(textBeforeInsertion: String(field.text.dropLast(text.count))) : .unreadable
+                ? .readable(textBeforeInsertion: String(field.text.dropLast(text.count)), textAfterInsertion: field.after)
+                : .unreadable
         } else {
             recorded = nil
         }

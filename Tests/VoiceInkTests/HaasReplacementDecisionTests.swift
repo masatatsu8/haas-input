@@ -12,7 +12,7 @@ final class HaasReplacementDecisionTests: XCTestCase {
         watched: Bool = true,
         unchanged: Bool = true,
         field: HaasFieldState = readable("前の文。合っていますか"),
-        baseline: HaasInsertionBaseline? = .readable(textBeforeInsertion: "前の文。")
+        baseline: HaasInsertionBaseline? = .readable(textBeforeInsertion: "前の文。", textAfterInsertion: "")
     ) -> HaasReplacementContext {
         HaasReplacementContext(
             insertedText: inserted, allSegmentsPosted: allPosted,
@@ -57,12 +57,26 @@ final class HaasReplacementDecisionTests: XCTestCase {
         let field = readable("はい")
         XCTAssertEqual(
             HaasReplacementDecision.decide(
-                context(inserted: "はい", field: field, baseline: .readable(textBeforeInsertion: "はい"))),
+                context(inserted: "はい", field: field, baseline: .readable(textBeforeInsertion: "はい", textAfterInsertion: ""))),
             .copyOnly(.textMismatch))
         // 貼る前の中身に入れた文を足したものと一致すれば消せる
         XCTAssertEqual(
             HaasReplacementDecision.decide(
-                context(inserted: "はい", field: readable("はいはい"), baseline: .readable(textBeforeInsertion: "はい"))),
+                context(inserted: "はい", field: readable("はいはい"), baseline: .readable(textBeforeInsertion: "はい", textAfterInsertion: ""))),
+            .replaceAutomatically(deleteCount: 2))
+    }
+
+    func testTextAfterCaretMustMatchRecordedPosition() {
+        // 貼る前は「前|はい後」。貼り付けが拒まれ、カーソルだけが既存の「はい」の後ろへ動いた
+        let baseline = HaasInsertionBaseline.readable(textBeforeInsertion: "前", textAfterInsertion: "はい後")
+        XCTAssertEqual(
+            HaasReplacementDecision.decide(
+                context(inserted: "はい", field: readable("前はい", after: "後"), baseline: baseline)),
+            .copyOnly(.textMismatch))
+        // 記録した位置に入れた文だけが増えていれば消せる
+        XCTAssertEqual(
+            HaasReplacementDecision.decide(
+                context(inserted: "はい", field: readable("前はい", after: "はい後"), baseline: baseline)),
             .replaceAutomatically(deleteCount: 2))
     }
 
@@ -85,7 +99,7 @@ final class HaasReplacementDecisionTests: XCTestCase {
         let field = readable("前\nA\nB")
         XCTAssertEqual(
             HaasReplacementDecision.decide(
-                context(inserted: "A\nB", field: field, baseline: .readable(textBeforeInsertion: "前\n"))),
+                context(inserted: "A\nB", field: field, baseline: .readable(textBeforeInsertion: "前\n", textAfterInsertion: ""))),
             .replaceAutomatically(deleteCount: 3)
         )
     }
@@ -119,7 +133,7 @@ final class HaasReplacementDecisionTests: XCTestCase {
         let field = readable("👩‍💻です")
         XCTAssertEqual(
             HaasReplacementDecision.decide(
-                context(inserted: "👩‍💻です", field: field, baseline: .readable(textBeforeInsertion: ""))),
+                context(inserted: "👩‍💻です", field: field, baseline: .readable(textBeforeInsertion: "", textAfterInsertion: ""))),
             .replaceAutomatically(deleteCount: 3)
         )
     }

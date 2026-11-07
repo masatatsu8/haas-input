@@ -558,8 +558,8 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
                 if self.insertionBaseline?.sessionID != recordID {
                     let baseline: HaasInsertionBaseline
                     switch target.fieldState() {
-                    case let .readable(textBeforeCaret, _, selectionLength) where selectionLength == 0:
-                        baseline = .readable(textBeforeInsertion: textBeforeCaret)
+                    case let .readable(textBeforeCaret, textAfterCaret, selectionLength) where selectionLength == 0:
+                        baseline = .readable(textBeforeInsertion: textBeforeCaret, textAfterInsertion: textAfterCaret)
                     case .readable, .unreadable:
                         // 選択範囲があると貼り付けで消える文字があるので、読めなかったものとして扱う
                         baseline = .unreadable

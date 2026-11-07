@@ -9,8 +9,8 @@ enum HaasFieldState: Equatable {
 
 /// 録音の最初の区切りを貼る直前に記録した、入力欄の状態
 enum HaasInsertionBaseline: Equatable {
-    /// 貼る前のカーソル直前の文字列
-    case readable(textBeforeInsertion: String)
+    /// 貼る前のカーソル (空の選択範囲) の前と後ろの文字列
+    case readable(textBeforeInsertion: String, textAfterInsertion: String)
     /// 貼る前に中身を読めなかった
     case unreadable
 }
@@ -41,7 +41,7 @@ struct HaasFieldExpectation: Equatable {
     /// 貼る前のカーソル直前の文字列
     let textBeforeInsertion: String
     let insertedText: String
-    /// ポップアップを開いたときのカーソルの後ろの文字列
+    /// 貼る前に記録したカーソルの後ろの文字列 (消している間も変わらないはず)
     let textAfterCaret: String
 }
 
@@ -65,13 +65,18 @@ enum HaasReplacementDecision: Equatable {
 
         let count = inserted.count
         switch context.field {
-        case let .readable(textBeforeCaret, _, selectionLength):
+        case let .readable(textBeforeCaret, textAfterCaret, selectionLength):
             if selectionLength != 0 { return .copyOnly(.selectionNotEmpty) }
             // 貼る前に読めなかった欄は、今読めても入れる前の中身がわからない
-            guard case let .readable(textBeforeInsertion) = baseline else { return .copyOnly(.insertionUnverified) }
-            // 末尾が同じだけでは今回入れた証明にならない (貼り付けが拒まれ、元から同じ文で終わる欄など)。
-            // 貼る前の中身に入れた文を足したものと、ちょうど一致するときだけ消す
-            guard textBeforeCaret == textBeforeInsertion + inserted else { return .copyOnly(.textMismatch) }
+            guard case let .readable(textBeforeInsertion, textAfterInsertion) = baseline else {
+                return .copyOnly(.insertionUnverified)
+            }
+            // 末尾が同じだけでは今回入れた証明にならない (貼り付けが拒まれ、元から同じ文で終わる欄や、
+            // 貼り付けが拒まれてカーソルだけが既存の同じ文の後ろへ動いた欄など)。
+            // 欄全体が「貼る前の中身の、記録した位置に入れた文だけを足したもの」とちょうど一致するときだけ消す
+            guard textBeforeCaret == textBeforeInsertion + inserted, textAfterCaret == textAfterInsertion else {
+                return .copyOnly(.textMismatch)
+            }
             return .replaceAutomatically(deleteCount: count)
         case .unreadable:
             if inserted.contains(where: \.isNewline) { return .copyOnly(.multiline) }

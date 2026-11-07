@@ -60,7 +60,7 @@ final class HaasInputDeliveryTests: XCTestCase {
         let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
         XCTAssertEqual(target.text, "前の文。前半、後半。")
         // 2つ目の区切りの前には読み直さない
-        XCTAssertEqual(input.insertionBaseline, .readable(textBeforeInsertion: "前の文。"))
+        XCTAssertEqual(input.insertionBaseline, .readable(textBeforeInsertion: "前の文。", textAfterInsertion: ""))
         XCTAssertEqual(target.reads, 1)
 
         // 次の録音では、その録音の最初の貼り付けの前に読み直す
@@ -70,7 +70,7 @@ final class HaasInputDeliveryTests: XCTestCase {
         await fixture.delivery.finish(sessionID: next)
         XCTAssertEqual(
             fixture.delivery.lastDeliveredInput?.insertionBaseline,
-            .readable(textBeforeInsertion: "前の文。前半、後半。"))
+            .readable(textBeforeInsertion: "前の文。前半、後半。", textAfterInsertion: ""))
     }
 
     func testFieldWithSelectionBeforePasteIsRecordedAsUnreadable() async throws {
@@ -106,6 +106,45 @@ final class HaasInputDeliveryTests: XCTestCase {
             isIdle: { true }, captureReturnTarget: { nil }, waitForFocus: { _ in })
         let draft = try XCTUnwrap(coordinator.begin())
         XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
+    }
+
+    func testRejectedPasteThatOnlyMovesCaretPastSameTextIsNotReplaced() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        // 欄は「前|はい後」。入力先は「はい」の貼り付けを拒み、カーソルだけを「前はい|後」へ動かす
+        let target = ReadableInputTarget(text: "前", after: "はい後")
+        fixture.paster.onStarted = {
+            target.text += "はい"
+            target.after.removeFirst(2)
+        }
+        let session = UUID()
+        try await fixture.delivery.begin(sessionID: session, target: target)
+        fixture.delivery.accept(sessionID: session, itemID: "item-1", text: "はい")
+        await fixture.delivery.finish(sessionID: session)
+        let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertTrue(input.allSegmentsPosted)
+        XCTAssertEqual(input.insertionBaseline, .readable(textBeforeInsertion: "前", textAfterInsertion: "はい後"))
+
+        let schema = Schema([Transcription.self, WordReplacement.self])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let replacer = RecordingCorrectionReplacer()
+        let coordinator = HaasCorrectionCoordinator(
+            delivery: fixture.delivery, monitor: fixture.monitor, replacer: replacer,
+            settings: HaasSettingsStore(defaults: fixture.defaults), modelContext: container.mainContext,
+            isIdle: { true }, captureReturnTarget: { nil }, waitForFocus: { _ in })
+        let draft = try XCTUnwrap(coordinator.begin())
+        // カーソルの前だけなら「前」+「はい」と一致するが、後ろが記録と違うので消さない
+        XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
+
+        let outcome = await coordinator.confirm(draft, corrected: "いいえ", register: [])
+
+        XCTAssertEqual(outcome.result, .copied(HaasCorrectionCoordinator.copiedMessage))
+        XCTAssertEqual(replacer.replaceCount, 0)
+        XCTAssertEqual(replacer.copies, ["いいえ"])
+        XCTAssertEqual(target.text, "前はい")
+        XCTAssertEqual(target.after, "後")
     }
 
     func testLastDeliveredInputIsNotAllPostedWhenHeldOrEmpty() async throws {
@@ -613,18 +652,42 @@ private struct AvailableInputTarget: HaasInputTargetChecking {
     func rejectionReason() -> String? { nil }
 }
 
-/// カーソルが末尾にある、中身を読める入力先
+/// 中身を読める入力先。text はカーソルの前、after はカーソルの後ろ
 @MainActor
 private final class ReadableInputTarget: HaasInputTargetChecking {
     let diagnosticAppIdentifier = "test.readable"
     var text: String
+    var after: String
     var selectionLength = 0
     private(set) var reads = 0
-    init(text: String) { self.text = text }
+    init(text: String, after: String = "") {
+        self.text = text
+        self.after = after
+    }
     func rejectionReason() -> String? { nil }
     func fieldState() -> HaasFieldState {
         reads += 1
-        return .readable(textBeforeCaret: text, textAfterCaret: "", selectionLength: selectionLength)
+        return .readable(textBeforeCaret: text, textAfterCaret: after, selectionLength: selectionLength)
+    }
+}
+
+/// 置き換えとコピーを記録するだけの置き換え役 (入力先にもクリップボードにも触れない)
+@MainActor
+private final class RecordingCorrectionReplacer: HaasCorrectionReplacing {
+    private(set) var replaceCount = 0
+    private(set) var copies: [String] = []
+    func replace(
+        _ text: String, deleteCount: Int,
+        awaitField: @escaping @MainActor (_ deleted: Int) async -> Bool,
+        shouldContinue: @escaping @MainActor (_ deleted: Int) -> Bool,
+        pasteGuard: @escaping @MainActor (CursorPaster.PastePhase) -> Bool
+    ) async -> HaasReplaceOutcome {
+        replaceCount += 1
+        return .notStarted
+    }
+    func copy(_ text: String) -> Bool {
+        copies.append(text)
+        return true
     }
 }
 
