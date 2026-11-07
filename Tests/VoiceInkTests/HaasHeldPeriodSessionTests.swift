@@ -242,6 +242,7 @@ final class HaasHeldPeriodSessionTests: XCTestCase {
         let text = try await session.finishAfterRecognition()
         XCTAssertEqual(text, "資料です。それで次です。", "終わりにもう1つ「。」を足さない")
         XCTAssertEqual(fixture.delivery.ledger.fullText, text)
+        XCTAssertEqual(session.punctuationRoutes["b"], .notApplied, "検証を通っても台帳に入らなければ、使えたとは残さない")
         XCTAssertEqual(fixture.paster.calls.map(\.text), ["資料です"])
     }
 

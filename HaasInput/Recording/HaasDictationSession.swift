@@ -248,7 +248,9 @@ final class HaasDictationSession {
                     protectedTerms: protectedTerms.filter(base.contains), completion: { [weak self] outcome in
                     self?.completeFormatting(requestID: requestID, candidate: outcome.candidate, route: outcome.route)
                 }) {
-                    completeFormatting(requestID: requestID, candidate: nil, route: .unavailable)
+                    completeFormatting(
+                        requestID: requestID, candidate: nil,
+                        route: punctuationWorker.declinedRoute(receivedAt: receivedAt))
                 }
             }
             publishPreview()
@@ -261,7 +263,6 @@ final class HaasDictationSession {
         guard !isCancelled, !isFinished, failure == nil,
             let pending = pendingFormatting, pending.requestID == requestID
         else { return }
-        recordPunctuationRoute(route, itemID: pending.itemID)
         var text = pending.deliveredText
         if let candidate {
             text = pending.attachesHeldPeriod ? HaasPunctuationFormatter.attachingHeldPeriod(to: candidate) : candidate
@@ -279,6 +280,7 @@ final class HaasDictationSession {
         let applied = delivery.completeHeldFormatting(
             sessionID: sessionID, itemID: pending.itemID, requestID: requestID, text: text
         )
+        recordPunctuationRoute(route == .formatted && !applied ? .notApplied : route, itemID: pending.itemID)
         // 台帳に残らなかった文で記録を確定しない。false なら accept の時の文が台帳に残っている
         transcript.finalize(id: pending.itemID, text: applied ? text : pending.deliveredText)
         if applied, holdsPeriod { heldPeriodItemID = pending.itemID }

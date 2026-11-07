@@ -22,6 +22,8 @@ enum HaasPunctuationRoute: String {
     case skippedWhileFormatting
     /// 受け渡しを保存できなかったので、AI に回さなかった
     case notAccepted
+    /// AI の結果は検証を通ったが、配送が止まるなどして台帳に入らなかった
+    case notApplied
     /// 整形を待つ間に、取り消しか失敗で打ち切った
     case cancelled
 }
@@ -117,6 +119,11 @@ final class HaasPunctuationWorker {
     func prewarm() {
         guard nativeRequestID == nil, unavailableReason == nil else { return }
         generator?.prewarm()
+    }
+
+    /// submit が依頼を受けなかった理由。期限を過ぎていれば時間切れ、それ以外は AI が使えないとみなす
+    func declinedRoute(receivedAt: ContinuousClock.Instant) -> HaasPunctuationRoute {
+        ContinuousClock.now < receivedAt.advanced(by: timeout) ? .unavailable : .timedOut
     }
 
     @discardableResult

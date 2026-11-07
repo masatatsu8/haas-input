@@ -140,6 +140,8 @@ final class HaasPunctuationWorkerTests: XCTestCase {
             await Task.yield()
             XCTAssertEqual(completions, 0, item.name)
             XCTAssertTrue(item.generator?.requests.isEmpty ?? true, item.name)
+            let expected: HaasPunctuationRoute = item.name == "expired before admission" ? .timedOut : .unavailable
+            XCTAssertEqual(worker.declinedRoute(receivedAt: item.receivedAt), expected, item.name)
         }
     }
 
