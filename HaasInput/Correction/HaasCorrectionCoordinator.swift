@@ -363,9 +363,7 @@ final class HaasCorrectionCoordinator: ObservableObject {
         case .newWord:
             do {
                 let entries = try settings.vocabularyEntriesSnapshot()
-                if let problem = readingProblem(suggestion, entries: entries, excluding: { $0.writtenForm == form }) {
-                    return problem
-                }
+                if let problem = readingProblem(suggestion, addingTo: nil, entries: entries) { return problem }
                 try settings.saveEntry(writtenForm: form, readings: [reading(of: suggestion)], category: .other)
                 return nil
             } catch {
@@ -377,9 +375,9 @@ final class HaasCorrectionCoordinator: ObservableObject {
                 guard let entry = entries.first(where: { $0.id == entryID }) else {
                     throw HaasVocabularyError.missingEntry
                 }
-                if let problem = readingProblem(suggestion, entries: entries, excluding: { $0.id == entryID }) {
-                    return problem
-                }
+                // ポップアップを開いている間に辞書の画面で改名されていれば、選ばれた語とは別の語になっている
+                guard entry.writtenForm == form else { return "『\(form)』は辞書で変更されたため、読みを追加しませんでした" }
+                if let problem = readingProblem(suggestion, addingTo: entry, entries: entries) { return problem }
                 try settings.saveEntry(
                     id: entryID, writtenForm: entry.writtenForm, readings: entry.readings + [reading(of: suggestion)],
                     category: entry.category)
@@ -394,25 +392,35 @@ final class HaasCorrectionCoordinator: ObservableObject {
         suggestion.reading.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 書き換えた後の読みを登録できないなら理由を返す。短すぎる読みや、別の語と同じ読みは照合で両方が効かなくなる
+    /// 登録した後の語が照合で効かないなら理由を返す。短すぎる読みや、別の語と同じキーを持つ語は、
+    /// 照合で両方が効かなくなる。キーは照合と同じ方法で作り、読みのほかにカナだけの正式表記も含める
+    /// - existing: 読みを足す先の語。新しい語なら nil
     private func readingProblem(
-        _ suggestion: HaasDictionarySuggestion, entries: [HaasVocabularyEntry],
-        excluding isSameEntry: (HaasVocabularyEntry) -> Bool
+        _ suggestion: HaasDictionarySuggestion, addingTo existing: HaasVocabularyEntry?,
+        entries: [HaasVocabularyEntry]
     ) -> String? {
         let form = suggestion.writtenForm
         let reading = reading(of: suggestion)
         guard !reading.isEmpty else { return "『\(form)』の読みが空なので登録しませんでした" }
-        let key = HaasJapaneseReading.matchKey(reading)
+        guard let key = HaasVocabularyMatcher.key(forReading: reading) else {
+            return "『\(form)』の読み『\(reading)』は照合に使えないので登録しませんでした"
+        }
         guard key.count >= HaasVocabularyMatcher.minimumKeyLength else {
             return "『\(form)』の読み『\(reading)』は短すぎるので登録しませんでした"
         }
-        let collision = entries.first { entry in
-            !isSameEntry(entry) && entry.readings.contains { HaasJapaneseReading.matchKey($0) == key }
-        }
-        if let collision {
+        // 登録で増えるキー。新しい語なら、カナだけの正式表記のキーも増える
+        let current = Set(existing.map(HaasVocabularyMatcher.matchingKeys(of:)) ?? [])
+        let updated = Set(HaasVocabularyMatcher.matchingKeys(
+            writtenForm: existing?.writtenForm ?? form, readings: (existing?.readings ?? []) + [reading]))
+        let added = updated.subtracting(current)
+        // 同じ表記の語は照合で曖昧にならないので比べない
+        let others = entries.filter { $0.id != existing?.id && $0.writtenForm != form }
+        guard let collision = others.first(where: { !added.isDisjoint(with: HaasVocabularyMatcher.matchingKeys(of: $0)) })
+        else { return nil }
+        if HaasVocabularyMatcher.matchingKeys(of: collision).contains(key) {
             return "『\(form)』の読み『\(reading)』は『\(collision.writtenForm)』と同じなので登録しませんでした"
         }
-        return nil
+        return "『\(form)』は『\(collision.writtenForm)』と同じ読みになるので登録しませんでした"
     }
 
     // MARK: - 履歴

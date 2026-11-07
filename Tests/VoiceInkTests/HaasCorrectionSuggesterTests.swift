@@ -89,6 +89,58 @@ final class HaasCorrectionSuggesterTests: XCTestCase {
         XCTAssertTrue(result.suggestions.isEmpty)
     }
 
+    func testKanaWrittenFormOfAnotherEntryCountsAsSameReading() {
+        // 「タツミ」は読みがなくても、照合ではカナの正式表記を読み「たつみ」として使う
+        let result = HaasCorrectionSuggester.suggestions(
+            original: "辰巳さんの資料です", corrected: "巽さんの資料です", entries: [entry("タツミ", [])]
+        )
+        XCTAssertEqual(result.suggestions.count, 1)
+        XCTAssertEqual(result.suggestions.first?.kind, .replacement)
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "巽")
+    }
+
+    func testNewKanaWrittenFormThatCollidesBecomesReplacement() {
+        // 新しい語「タツミ」は、正式表記から読み「たつみ」が増え、「巽」の読みとぶつかる
+        let result = HaasCorrectionSuggester.suggestions(
+            original: "東京さんの資料です", corrected: "タツミさんの資料です", entries: [entry("巽", ["たつみ"])]
+        )
+        XCTAssertEqual(result.suggestions.count, 1)
+        XCTAssertEqual(result.suggestions.first?.kind, .replacement)
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "タツミ")
+    }
+
+    // MARK: - 長い文
+
+    func testLongIdenticalTextHasNoChanges() {
+        let long = String(repeating: "資料を確認します。", count: 3_000)
+        XCTAssertEqual(HaasCorrectionDiff.changes(from: long, to: long), [])
+        XCTAssertTrue(HaasCorrectionSuggester.suggestions(original: long, corrected: long, entries: []).suggestions.isEmpty)
+    }
+
+    func testLongTextWithOneSmallChangeStillSuggests() {
+        // 前後の共通の語を除くので、全文が長くても違う部分だけを比べる
+        let long = String(repeating: "資料を確認します。", count: 1_500)
+        let result = HaasCorrectionSuggester.suggestions(
+            original: long + "辰巳さんの資料です。" + long, corrected: long + "巽さんの資料です。" + long, entries: []
+        )
+        XCTAssertEqual(result.suggestions.count, 1)
+        XCTAssertEqual(result.suggestions.first?.kind, .newWord)
+        XCTAssertEqual(result.suggestions.first?.before, "辰巳")
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "巽")
+    }
+
+    func testTooLargeDifferenceGivesNoSuggestions() {
+        // 違う部分の語の数の積が上限を超えるときは、表を作らずに候補を出さない
+        let original = String(repeating: "りんご、", count: 300)
+        let corrected = String(repeating: "みかん、", count: 300)
+        let oldCount = HaasJapaneseReading.tokens(in: original).count
+        let newCount = HaasJapaneseReading.tokens(in: corrected).count
+        XCTAssertGreaterThan(oldCount * newCount, HaasCorrectionDiff.maximumTableCells, "テスト前提")
+        XCTAssertEqual(HaasCorrectionDiff.changes(from: original, to: corrected), [])
+        XCTAssertTrue(
+            HaasCorrectionSuggester.suggestions(original: original, corrected: corrected, entries: []).suggestions.isEmpty)
+    }
+
     func testSkipsChangesInsideDictionaryForm() {
         let result = HaasCorrectionSuggester.suggestions(
             original: "辰巳商事の資料", corrected: "巽商事の資料",

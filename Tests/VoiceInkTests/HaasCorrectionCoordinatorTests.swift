@@ -153,6 +153,56 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.settings.entries.map(\.writtenForm), ["竜巳"])
     }
 
+    func testRejectsReadingThatCollidesWithKanaWrittenForm() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        // 読みのない「タツミ」も、照合ではカナの正式表記を読み「たつみ」として使う
+        try fixture.settings.saveEntry(writtenForm: "タツミ", readings: [], category: .person)
+        fixture.deliver(text: "辰巳です", field: nil)
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+
+        let outcome = await fixture.coordinator.confirm(
+            draft, corrected: "巽です", register: [newWord("巽", reading: "たつみ")])
+
+        XCTAssertEqual(outcome.dictionaryErrors, ["『巽』の読み『たつみ』は『タツミ』と同じなので登録しませんでした"])
+        XCTAssertEqual(fixture.settings.entries.map(\.writtenForm), ["タツミ"])
+    }
+
+    func testRejectsNewKanaWrittenFormThatCollides() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        try fixture.settings.saveEntry(writtenForm: "巽", readings: ["たつみ"], category: .person)
+        fixture.deliver(text: "東京です", field: nil)
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+
+        // 読み「とうきょう」はぶつからないが、正式表記「タツミ」から増える読み「たつみ」がぶつかる
+        let outcome = await fixture.coordinator.confirm(
+            draft, corrected: "タツミです",
+            register: [HaasDictionarySuggestion(id: 0, kind: .newWord, before: "東京", writtenForm: "タツミ", reading: "とうきょう")])
+
+        XCTAssertEqual(outcome.dictionaryErrors, ["『タツミ』は『巽』と同じ読みになるので登録しませんでした"])
+        XCTAssertEqual(fixture.settings.entries.map(\.writtenForm), ["巽"])
+    }
+
+    func testAddReadingIsSkippedWhenEntryWasRenamed() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        try fixture.settings.saveEntry(writtenForm: "巽", readings: ["そん"], category: .person)
+        let entry = try XCTUnwrap(fixture.settings.entries.first)
+        fixture.deliver(text: "たつみです", field: nil)
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let suggestion = HaasDictionarySuggestion(
+            id: 0, kind: .addReading(entryID: entry.id), before: "たつみ", writtenForm: "巽", reading: "たつみ")
+        // ポップアップを開いている間に、辞書の画面で同じ項目を改名した
+        try fixture.settings.saveEntry(id: entry.id, writtenForm: "竜巳", readings: ["そん"], category: .person)
+
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "巽です", register: [suggestion])
+
+        XCTAssertEqual(outcome.dictionaryErrors, ["『巽』は辞書で変更されたため、読みを追加しませんでした"])
+        XCTAssertEqual(fixture.settings.entries.map(\.writtenForm), ["竜巳"])
+        XCTAssertEqual(fixture.settings.entries.first?.readings, ["そん"])
+    }
+
     func testRegistersOnlySelectedSuggestions() async throws {
         let fixture = try CorrectionFixture()
         defer { fixture.cleanUp() }

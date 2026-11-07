@@ -11,25 +11,46 @@ struct HaasTextChange: Equatable {
 
 /// 直す前と後の文を語に分け、置き換わった部分を取り出す。
 enum HaasCorrectionDiff {
+    /// 最長共通部分列の表の大きさの上限 (前後の共通部分を除いた語の数の積)。
+    /// 超えるときは違いを探さない (辞書の候補を出さないだけで、訂正は続ける)
+    static let maximumTableCells = 40_000
+
     static func changes(from original: String, to corrected: String) -> [HaasTextChange] {
+        // 同じ文なら語に分けるまでもない
+        guard original != corrected else { return [] }
         let old = HaasJapaneseReading.tokens(in: original)
         let new = HaasJapaneseReading.tokens(in: corrected)
 
-        // 語の表記の並びで最長共通部分列を取る。
-        var table = Array(repeating: Array(repeating: 0, count: new.count + 1), count: old.count + 1)
-        for i in stride(from: old.count - 1, through: 0, by: -1) {
-            for j in stride(from: new.count - 1, through: 0, by: -1) {
-                table[i][j] = old[i].surface == new[j].surface
+        // 前後の共通の語を除き、残りの部分だけで表を作る
+        var prefix = 0
+        while prefix < old.count, prefix < new.count, old[prefix].surface == new[prefix].surface { prefix += 1 }
+        var suffix = 0
+        while suffix < old.count - prefix, suffix < new.count - prefix,
+            old[old.count - 1 - suffix].surface == new[new.count - 1 - suffix].surface
+        {
+            suffix += 1
+        }
+        let oldEnd = old.count - suffix
+        let newEnd = new.count - suffix
+        let rows = oldEnd - prefix
+        let columns = newEnd - prefix
+        guard rows * columns <= maximumTableCells else { return [] }
+
+        // 残りの語の表記の並びで最長共通部分列を取る。table[i][j] は old[prefix + i...] と new[prefix + j...] の長さ
+        var table = Array(repeating: Array(repeating: 0, count: columns + 1), count: rows + 1)
+        for i in stride(from: rows - 1, through: 0, by: -1) {
+            for j in stride(from: columns - 1, through: 0, by: -1) {
+                table[i][j] = old[prefix + i].surface == new[prefix + j].surface
                     ? table[i + 1][j + 1] + 1
                     : max(table[i + 1][j], table[i][j + 1])
             }
         }
 
         var changes: [HaasTextChange] = []
-        var i = 0
-        var j = 0
-        var oldStart = 0
-        var newStart = 0
+        var i = prefix
+        var j = prefix
+        var oldStart = prefix
+        var newStart = prefix
         func flush(oldEnd: Int, newEnd: Int) {
             // 片側にしかない組 (追加だけ・削除だけ) は返さない。
             guard oldEnd > oldStart, newEnd > newStart else { return }
@@ -45,19 +66,20 @@ enum HaasCorrectionDiff {
                 beforeRange: beforeRange
             ))
         }
-        while i < old.count || j < new.count {
-            if i < old.count, j < new.count, old[i].surface == new[j].surface {
+        while i < oldEnd || j < newEnd {
+            if i < oldEnd, j < newEnd, old[i].surface == new[j].surface {
                 flush(oldEnd: i, newEnd: j)
                 i += 1
                 j += 1
                 oldStart = i
                 newStart = j
-            } else if j == new.count || (i < old.count && table[i + 1][j] >= table[i][j + 1]) {
+            } else if j == newEnd || (i < oldEnd && table[i - prefix + 1][j - prefix] >= table[i - prefix][j - prefix + 1]) {
                 i += 1
             } else {
                 j += 1
             }
         }
+        // 後ろの共通の語の手前で区切る
         flush(oldEnd: i, newEnd: j)
         return changes
     }
@@ -114,20 +136,28 @@ enum HaasCorrectionSuggester {
             }
 
             let id = suggestions.count
-            let key = HaasJapaneseReading.matchKey(change.beforeReading)
             // 4. 読みが当てにならない、または短すぎる語は置き換えルールにする。
-            if !change.beforeHasReading || key.count < HaasVocabularyMatcher.minimumKeyLength {
+            //    キーは照合 (HaasVocabularyMatcher) と同じ方法で作る。
+            guard change.beforeHasReading,
+                  let key = HaasVocabularyMatcher.key(forReading: change.beforeReading),
+                  key.count >= HaasVocabularyMatcher.minimumKeyLength
+            else {
                 suggestions.append(replacement(id, change))
                 continue
             }
-            // 5. 同じ読みを別の語が持っているときは置き換えルールにする。
-            if entries.contains(where: { $0.writtenForm != change.after && hasReading(key, $0) }) {
+            // 5. 登録で増えるキー (読みと、カナだけの正式表記) を別の語が持っているときは置き換えルールにする。
+            //    別の語のキーには、読みのほかにカナだけの正式表記も含む。
+            let addedKeys = Set(HaasVocabularyMatcher.matchingKeys(writtenForm: change.after, readings: [change.beforeReading]))
+            if entries.contains(where: { entry in
+                entry.writtenForm != change.after
+                    && !addedKeys.isDisjoint(with: HaasVocabularyMatcher.matchingKeys(of: entry))
+            }) {
                 suggestions.append(replacement(id, change))
                 continue
             }
             // 6. 同じ表記の語があれば、読みの追加か、何もしないかを決める。
             if let existing = entries.first(where: { $0.writtenForm == change.after }) {
-                if hasReading(key, existing) { continue }
+                if HaasVocabularyMatcher.matchingKeys(of: existing).contains(key) { continue }
                 suggestions.append(HaasDictionarySuggestion(
                     id: id, kind: .addReading(entryID: existing.id),
                     before: change.before, writtenForm: change.after, reading: change.beforeReading
@@ -147,10 +177,6 @@ enum HaasCorrectionSuggester {
         HaasDictionarySuggestion(
             id: id, kind: .replacement, before: change.before, writtenForm: change.after, reading: ""
         )
-    }
-
-    private static func hasReading(_ key: String, _ entry: HaasVocabularyEntry) -> Bool {
-        entry.readings.contains { HaasJapaneseReading.matchKey($0) == key }
     }
 
     private static func stripped(_ text: String) -> String {
