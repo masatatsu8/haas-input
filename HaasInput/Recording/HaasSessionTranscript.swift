@@ -33,6 +33,15 @@ struct HaasSessionTranscript {
         return true
     }
 
+    /// 保留した末尾の「。」を、録音の終わりに区切りとして足す。原文は変えないので、プレビューの照合は崩れない
+    @discardableResult
+    mutating func appendHeldPeriod(id: String) -> Bool {
+        guard !committedIDs.contains(id), ledger.append(id: id, text: "。") else { return false }
+        committedIDs.insert(id)
+        finalizedIDs.insert(id)
+        return true
+    }
+
     func preview(rawText: String) -> String {
         guard rawText.hasPrefix(rawCommittedText) else { return text }
         return text + rawText.dropFirst(rawCommittedText.count)

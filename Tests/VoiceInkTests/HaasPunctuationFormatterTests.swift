@@ -98,4 +98,99 @@ final class HaasPunctuationFormatterTests: XCTestCase {
             }
         }
     }
+    func testHeldPeriodIsSplitOnlyWhenItIsTheLastScalar() {
+        let cases: [(input: String, body: String, held: Bool)] = [
+            ("確認します。", "確認します", true),
+            ("です。", "です", true),
+            ("「確認します。」", "「確認します。」", false),
+            ("確認します。」", "確認します。」", false),
+            ("完了です。\n", "完了です。\n", false),
+            ("完了です。 ", "完了です。 ", false),
+            ("合っていますか？", "合っていますか？", false),
+            ("すごい！", "すごい！", false),
+            ("確認します", "確認します", false),
+            ("。", "。", false),
+            (" 。", " 。", false),
+            ("", "", false),
+        ]
+
+        for item in cases {
+            let result = HaasPunctuationFormatter.splittingHeldPeriod(item.input)
+            XCTAssertEqual(result.body.unicodeScalars.map(\.value), item.body.unicodeScalars.map(\.value), item.input.debugDescription)
+            XCTAssertEqual(result.held, item.held, item.input.debugDescription)
+        }
+    }
+
+    func testNextSegmentStartsSentenceUnlessItContinuesThePreviousOne() {
+        let cases: [(next: String, startsSentence: Bool)] = [
+            ("それで", true),
+            ("次に進みます", true),
+            ("けど", false),
+            ("けど次も確認します", false),
+            ("けれど", false),
+            ("けれども", false),
+            ("けども", false),
+            ("ので", false),
+            ("ので確認しました", false),
+            ("って言ってました", false),
+            ("とか", false),
+            ("  けど", false),
+            ("ね", false),
+            ("よね", false),
+            ("よ", false),
+            ("ねえ", false),
+            ("な", false),
+            ("なあ", false),
+            ("か", false),
+            (" ね ", false),
+            ("ねこ", true),
+            ("学校", true),
+            ("なので", true),
+            ("よろしくお願いします", true),
+            ("よく分かりました", true),
+            ("から揚げ", true),
+            ("、それで", false),
+            ("。それで", false),
+            ("，それで", false),
+            ("．それで", false),
+            ("？", false),
+            ("！", false),
+            ("?", false),
+            ("!", false),
+            (" 、それで", false),
+            (" ", true),
+        ]
+
+        for item in cases {
+            XCTAssertEqual(HaasPunctuationFormatter.startsSentence(item.next), item.startsSentence, item.next.debugDescription)
+        }
+    }
+
+    func testHeldPeriodJoinsOrSeparatesTheNextSegment() {
+        func joined(_ previous: String, _ next: String) -> String {
+            let split = HaasPunctuationFormatter.splittingHeldPeriod(HaasPunctuationFormatter.fast(previous))
+            guard split.held, HaasPunctuationFormatter.startsSentence(next) else { return split.body + next }
+            return split.body + HaasPunctuationFormatter.attachingHeldPeriod(to: next)
+        }
+        XCTAssertEqual(joined("確認したいです", "けど"), "確認したいですけど")
+        XCTAssertEqual(joined("確認したいです", "それで"), "確認したいです。それで")
+        XCTAssertEqual(joined("確認したいです", "、それで"), "確認したいです、それで")
+        XCTAssertEqual(joined("確認したいです", "ね"), "確認したいですね")
+    }
+
+    func testAttachingHeldPeriodNeverDoublesPunctuation() {
+        let cases: [(text: String, expected: String)] = [
+            ("それで", "。それで"),
+            (" それで", "。 それで"),
+            ("。それで", "。それで"),
+            ("、それで", "、それで"),
+            (" 。それで", " 。それで"),
+            ("？", "？"),
+            ("!", "!"),
+        ]
+
+        for item in cases {
+            XCTAssertEqual(HaasPunctuationFormatter.attachingHeldPeriod(to: item.text), item.expected, item.text.debugDescription)
+        }
+    }
 }

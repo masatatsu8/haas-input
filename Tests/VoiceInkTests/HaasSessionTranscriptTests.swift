@@ -32,4 +32,16 @@ final class HaasSessionTranscriptTests: XCTestCase {
         XCTAssertEqual(transcript.commit(id: "a", rawText: "辰美さんのジハンの件"), "巽さんの自販の件")
         XCTAssertEqual(transcript.text, "巽さんの自販の件")
     }
+    func testHeldPeriodIsAppendedAsItsOwnSegmentWithoutBreakingPreview() throws {
+        var transcript = HaasSessionTranscript(replacements: try WordReplacementPlan(records: []))
+        XCTAssertEqual(transcript.commit(id: "a", rawText: "確認します"), "確認します")
+        XCTAssertTrue(transcript.finalize(id: "a", text: "確認します"))
+        XCTAssertTrue(transcript.appendHeldPeriod(id: "a-period"))
+        XCTAssertEqual(transcript.text, "確認します。")
+        XCTAssertEqual(transcript.preview(rawText: "確認します次も"), "確認します。次も")
+        XCTAssertFalse(transcript.appendHeldPeriod(id: "a-period"))
+        XCTAssertFalse(transcript.finalize(id: "a-period", text: "書き換え"))
+        XCTAssertNil(transcript.commit(id: "a-period", rawText: "書き換え"))
+        XCTAssertEqual(transcript.text, "確認します。")
+    }
 }
