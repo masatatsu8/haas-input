@@ -196,7 +196,7 @@ struct HaasDeliveredInput {
     let sessionID: UUID
     let transcriptionID: UUID?
     let text: String
-    /// 区切りがすべて posted で、かつ1つ以上ある
+    /// 区切りがすべて posted で、かつ1つ以上ある。録音の途中で入力先を取り直した回は false
     let allSegmentsPosted: Bool
     let target: (any HaasInputTargetChecking)?
     /// この録音の開始で始めた見張りの印 (別の回の印は返さない)
@@ -225,6 +225,9 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
     private(set) var watchToken: UUID?
     /// watchToken を始めた録音。begin が失敗しても前回の印と記録の組が崩れないように持つ
     private var watchSessionID: UUID?
+    /// 再開で入力先を取り直した録音。前の入力先に入れた分は今の入力先にないので、置き換えに使わせない
+    private var retargetedSessionID: UUID?
+    private let captureTarget: @MainActor () -> (any HaasInputTargetChecking)?
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "HaasInputDelivery")
     private var loadFailure: Error?
     private var persistenceFailure: Error?
@@ -255,7 +258,8 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
         let segments = record.ledger.segments
         return HaasDeliveredInput(
             sessionID: record.id, transcriptionID: record.transcriptionID, text: record.ledger.fullText,
-            allSegmentsPosted: !segments.isEmpty && segments.allSatisfy { $0.disposition == .posted },
+            allSegmentsPosted: !segments.isEmpty && segments.allSatisfy { $0.disposition == .posted }
+                && retargetedSessionID != record.id,
             target: target, watchToken: watchSessionID == record.id ? watchToken : nil)
     }
 
@@ -266,11 +270,13 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
 
     init(
         store: HaasRecoveryStore, textPaster: any HaasTextPasting,
-        inputMonitor: any HaasInputWatching = HaasUserInputMonitor.shared
+        inputMonitor: any HaasInputWatching = HaasUserInputMonitor.shared,
+        captureTarget: @escaping @MainActor () -> (any HaasInputTargetChecking)? = { HaasPasteTarget.capture() }
     ) {
         self.store = store
         self.textPaster = textPaster
         self.inputMonitor = inputMonitor
+        self.captureTarget = captureTarget
         do {
             let loaded = try store.load()
             state = loaded
@@ -415,10 +421,14 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
                 self.pendingBeginID == nil, !Task.isCancelled
             else { return }
             self.resumeTask = nil
-            guard let target = HaasPasteTarget.capture() else {
+            guard let target = self.captureTarget() else {
                 self.message = "入力先を確認できませんでした。再開を予約して外部のテキスト欄を選ぶか、未入力分をコピーしてください。"
                 return
             }
+            // 入力先を取り直したので、この録音の入力はどれも置き換えに使わない。
+            // 自分の窓での操作や ⌘Tab は見張りで見えないことがあるため、見張りも信頼しない
+            self.retargetedSessionID = recordID
+            self.inputMonitor.invalidate()
             self.target = target
             self.isPaused = false
             self.message = ""
@@ -453,6 +463,11 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
         var candidate = state
         candidate.active?.ledger.markPendingAsCopied()
         _ = save(candidate)
+    }
+
+    /// 入力の後の見張りを信頼しなくする。この配信を通さずに貼るとき (直前の認識結果の入力など) に呼ぶ
+    func invalidateInputWatch() {
+        inputMonitor.invalidate()
     }
 
     func acknowledgeUncertainInput() {

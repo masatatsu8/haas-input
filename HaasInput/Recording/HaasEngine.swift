@@ -256,6 +256,8 @@ final class HaasEngine: ObservableObject {
     }
 
     func pasteLastTranscription() {
+        // どの経路から呼ばれても、この貼り付けの後に直前の入力を置き換えさせない
+        inputDelivery.invalidateInputWatch()
         guard recordingState == .idle else { return }
         let target = HaasPasteTarget.capture()
         Task { @MainActor [weak self] in
