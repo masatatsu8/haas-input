@@ -36,7 +36,14 @@ final class HaasUsageRecorder: ObservableObject {
             return
         }
 
-        var known = (try? storedMetrics().map(\.transcriptionId)).map(Set.init) ?? []
+        // 統計の読み込みに失敗したら、重複して挿入しないよう何も書かずに戻る
+        var known: Set<UUID>
+        do {
+            known = Set(try storedMetrics().map(\.transcriptionId))
+        } catch {
+            logger.error("利用記録の読み込みに失敗: \(error.localizedDescription, privacy: .private)")
+            return
+        }
         var attempted: [UUID: HaasUsageSample] = [:]
 
         func insert(id: UUID, sample: HaasUsageSample) {
@@ -80,13 +87,25 @@ final class HaasUsageRecorder: ObservableObject {
     }
 
     private func refreshSamples() {
+        let stored: [SessionMetric]
+        do {
+            stored = try storedMetrics()
+        } catch {
+            // 読めないときは前回の samples を保つ
+            logger.error("利用記録の読み込みに失敗: \(error.localizedDescription, privacy: .private)")
+            return
+        }
         var byId: [UUID: HaasUsageSample] = [:]
-        for metric in (try? storedMetrics()) ?? [] {
+        for metric in stored {
             byId[metric.transcriptionId] = HaasUsageSample(
                 timestamp: metric.timestamp, duration: metric.audioDuration, characters: metric.wordCount
             )
         }
         for (id, sample) in pending where byId[id] == nil { byId[id] = sample }
-        samples = byId.values.sorted { $0.timestamp < $1.timestamp }
+        samples = byId.sorted {
+            $0.value.timestamp == $1.value.timestamp
+                ? $0.key.uuidString < $1.key.uuidString
+                : $0.value.timestamp < $1.value.timestamp
+        }.map(\.value)
     }
 }
