@@ -7,6 +7,7 @@ enum ShortcutAction: Hashable, Sendable {
     case cancelRecorder
     case openQuickHistory
     case recorderPanelEscape
+    case correctLastInput
 
     var userDefaultsKey: String { "Shortcut_\(storageName)" }
     var isStored: Bool { self != .recorderPanelEscape }
@@ -19,6 +20,7 @@ enum ShortcutAction: Hashable, Sendable {
         case .cancelRecorder: return "cancelRecorder"
         case .openQuickHistory: return "openHistoryWindow"
         case .recorderPanelEscape: return "recorderPanelEscape"
+        case .correctLastInput: return "correctLastInput"
         }
     }
 
@@ -30,12 +32,14 @@ enum ShortcutAction: Hashable, Sendable {
         case .cancelRecorder: return "録音を取り消す"
         case .openQuickHistory: return "履歴を開く"
         case .recorderPanelEscape: return "録音パネルの取消"
+        case .correctLastInput: return "直前の入力を直す"
         }
     }
 
-    static let globalUtilityActions: [Self] = [.pasteLastTranscription, .openQuickHistory]
+    static let globalUtilityActions: [Self] = [.pasteLastTranscription, .openQuickHistory, .correctLastInput]
     static let recorderPanelStoredActions: [Self] = [.cancelRecorder]
     static let legacyKeyboardShortcutActions: [Self] = [
         .primaryRecording, .secondaryRecording, .pasteLastTranscription, .cancelRecorder, .openQuickHistory,
+        .correctLastInput,
     ]
 }

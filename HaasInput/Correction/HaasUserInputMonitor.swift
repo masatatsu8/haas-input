@@ -110,7 +110,6 @@ final class HaasUserInputMonitor: HaasInputWatching {
     }
 
     /// 既定の除外。保存内容を読むだけで、移行や書き込みはしない。
-    /// 訂正のショートカットは、その操作が加わる段階で足す。
     static func defaultExcludedShortcuts() -> [Shortcut] {
         let defaults = UserDefaults.standard
         func selection(_ key: String, fallback: RecordingShortcutManager.ShortcutSelection)
@@ -123,7 +122,7 @@ final class HaasUserInputMonitor: HaasInputWatching {
             primarySelection: .custom, primary: ShortcutStore.shortcut(for: .primaryRecording),
             secondarySelection: selection("secondaryRecordingShortcut", fallback: .none),
             secondary: ShortcutStore.shortcut(for: .secondaryRecording),
-            correction: nil)
+            correction: ShortcutStore.shortcut(for: .correctLastInput))
     }
 
     func startWatching() -> UUID {

@@ -237,7 +237,7 @@ enum ShortcutMigration {
             return ["cancelRecorder"]
         case .openQuickHistory:
             return ["openHistoryWindow"]
-        case .recorderPanelEscape:
+        case .recorderPanelEscape, .correctLastInput:
             return []
         }
     }
