@@ -80,6 +80,52 @@ final class HaasReplacementDecisionTests: XCTestCase {
             .replaceAutomatically(deleteCount: 2))
     }
 
+    func testInsertionStartingWithCombiningMarkOnlyCopies() {
+        // 「か」の後ろに結合の濁点で始まる「゙です」を入れると、欄では「がです」の3文字になる。
+        // 最後の Backspace は「が」ごと消し、前からあった「か」まで消える
+        let inserted = "\u{3099}です"
+        XCTAssertEqual(
+            HaasReplacementDecision.decide(context(
+                inserted: inserted, field: readable("か" + inserted),
+                baseline: .readable(textBeforeInsertion: "か", textAfterInsertion: ""))),
+            .copyOnly(.characterBoundary))
+        // 後ろ側の端がつながる場合も同じ
+        XCTAssertEqual(
+            HaasReplacementDecision.decide(context(
+                inserted: "です", field: readable("前です", after: "\u{3099}後"),
+                baseline: .readable(textBeforeInsertion: "前", textAfterInsertion: "\u{3099}後"))),
+            .copyOnly(.characterBoundary))
+        // 前に文字がなければ、つながる先もない
+        XCTAssertEqual(
+            HaasReplacementDecision.decide(context(
+                inserted: inserted, field: readable(inserted),
+                baseline: .readable(textBeforeInsertion: "", textAfterInsertion: ""))),
+            .replaceAutomatically(deleteCount: 3))
+    }
+
+    func testUnreadableInsertionStartingWithAttachingScalarOnlyCopies() {
+        for first in ["\u{3099}", "\u{0301}", "\u{20DD}", "\u{200D}", "\u{FE0F}", "\u{E0100}", "\u{1F3FB}"] {
+            XCTAssertEqual(
+                HaasReplacementDecision.decide(context(inserted: first + "です", field: .unreadable, baseline: .unreadable)),
+                .copyOnly(.characterBoundary), "U+\(String(first.unicodeScalars.first!.value, radix: 16))")
+        }
+        // ふつうの文は確認付きのまま
+        for ordinary in ["がです", "👍です", "👩‍💻です"] {
+            XCTAssertEqual(
+                HaasReplacementDecision.decide(context(inserted: ordinary, field: .unreadable, baseline: .unreadable)),
+                .replaceAfterConfirmation(deleteCount: ordinary.count), ordinary)
+        }
+    }
+
+    func testCharacterBoundaryHelpers() {
+        XCTAssertFalse(HaasReplacementDecision.insertionKeepsCharacterBoundaries("\u{3099}です", textBefore: "か", textAfter: ""))
+        XCTAssertFalse(HaasReplacementDecision.insertionKeepsCharacterBoundaries("か", textBefore: "", textAfter: "\u{3099}"))
+        XCTAssertTrue(HaasReplacementDecision.insertionKeepsCharacterBoundaries("です", textBefore: "前の文。", textAfter: "後"))
+        XCTAssertTrue(HaasReplacementDecision.startsWithAttachingScalar("\u{3099}"))
+        XCTAssertFalse(HaasReplacementDecision.startsWithAttachingScalar("が"))
+        XCTAssertFalse(HaasReplacementDecision.startsWithAttachingScalar(""))
+    }
+
     func testReadableFieldWithoutBaselineOnlyCopies() {
         XCTAssertEqual(HaasReplacementDecision.decide(context(baseline: nil)), .copyOnly(.insertionUnverified))
         XCTAssertEqual(

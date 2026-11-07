@@ -32,6 +32,9 @@ enum HaasCopyReason: Equatable {
     case selectionNotEmpty, textMismatch, multiline, tooLong
     /// 貼る前の欄の記録がない、または貼る前に読めなかった欄が今は読める。今回入れた文だと確かめられない
     case insertionUnverified
+    /// 入れた文の端が前後の文字とつながり、1文字になっている (結合文字で始まるなど)。
+    /// Backspace が入れる前からあった文字まで消しうる
+    case characterBoundary
     /// 訂正の後で、入力先の中身が直した文と確かめられない (decide は返さない)
     case alreadyCorrected
 }
@@ -77,11 +80,38 @@ enum HaasReplacementDecision: Equatable {
             guard textBeforeCaret == textBeforeInsertion + inserted, textAfterCaret == textAfterInsertion else {
                 return .copyOnly(.textMismatch)
             }
+            guard insertionKeepsCharacterBoundaries(
+                inserted, textBefore: textBeforeInsertion, textAfter: textAfterInsertion)
+            else { return .copyOnly(.characterBoundary) }
             return .replaceAutomatically(deleteCount: count)
         case .unreadable:
             if inserted.contains(where: \.isNewline) { return .copyOnly(.multiline) }
             if count > maximumConfirmedLength { return .copyOnly(.tooLong) }
+            // 前の文字がわからないので、前の文字とつながりうる文字で始まる文は消さない
+            if startsWithAttachingScalar(inserted) { return .copyOnly(.characterBoundary) }
             return .replaceAfterConfirmation(deleteCount: count)
+        }
+    }
+
+    /// 入れた文の両端が、実際の欄の中でも文字 (Character) の区切りになっているか。
+    /// 結合文字で始まる文は前の文字と1文字になり、最後の Backspace が前からあった文字ごと消す
+    static func insertionKeepsCharacterBoundaries(
+        _ inserted: String, textBefore: String, textAfter: String
+    ) -> Bool {
+        (textBefore + inserted).count == textBefore.count + inserted.count
+            && (inserted + textAfter).count == inserted.count + textAfter.count
+    }
+
+    /// 前の文字とつながりうる Unicode スカラーで始まるか (結合文字、ZWJ、異体字セレクター、肌の色の修飾)
+    static func startsWithAttachingScalar(_ text: String) -> Bool {
+        guard let scalar = text.unicodeScalars.first else { return false }
+        switch scalar.properties.generalCategory {
+        case .nonspacingMark, .spacingMark, .enclosingMark: return true
+        default: break
+        }
+        switch scalar.value {
+        case 0x200D, 0xFE00...0xFE0F, 0xE0100...0xE01EF, 0x1F3FB...0x1F3FF: return true
+        default: return false
         }
     }
 
@@ -92,7 +122,8 @@ enum HaasReplacementDecision: Equatable {
     }
 
     /// 消している途中の欄が期待どおりかを返す (読めない欄は false)。
-    /// カーソルの前は「貼る前の中身 + 入れた文の残り」、後ろは開いたときのままで、選択範囲が空のときだけ true
+    /// カーソルの前は「貼る前の中身 + 入れた文の残り」、後ろは貼る前に記録した中身 (textAfterInsertion) のままで、
+    /// 選択範囲が空のときだけ true
     static func fieldMatchesProgress(
         _ field: HaasFieldState, expectation: HaasFieldExpectation, deleted: Int
     ) -> Bool {

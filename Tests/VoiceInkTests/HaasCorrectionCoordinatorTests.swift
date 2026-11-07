@@ -355,6 +355,55 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(field.after, "後")
     }
 
+    func testInsertionMergedWithPreviousCharacterOnlyCopies() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        // 前からある「か」に、結合の濁点で始まる「゙です」が入り、欄では「がです」になった
+        let inserted = "\u{3099}です"
+        let field = FakeField(text: "か" + inserted)
+        fixture.deliver(
+            text: inserted, field: field, baseline: .some(.readable(textBeforeInsertion: "か", textAfterInsertion: "")))
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        XCTAssertEqual(draft.decision, .copyOnly(.characterBoundary))
+
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "です", register: [])
+
+        XCTAssertEqual(outcome.result, .copied(copiedMessage))
+        XCTAssertTrue(fixture.replacer.calls.isEmpty)
+        XCTAssertEqual(field.backspaces, 0)
+        XCTAssertEqual(field.text, "か" + inserted)
+    }
+
+    func testUnreadableInsertionStartingWithCombiningMarkOnlyCopies() throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        let field = FakeField(text: "か\u{3099}です")
+        field.readable = false
+        fixture.deliver(text: "\u{3099}です", field: field)
+        XCTAssertEqual(fixture.coordinator.begin()?.decision, .copyOnly(.characterBoundary))
+    }
+
+    func testRecorrectionStartingWithCombiningMarkOnlyCopies() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        let field = FakeField(text: "かたつみ")
+        fixture.deliver(
+            text: "たつみ", field: field, baseline: .some(.readable(textBeforeInsertion: "か", textAfterInsertion: "")))
+        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        XCTAssertEqual(draft.decision, .replaceAutomatically(deleteCount: 3))
+
+        // 直した文が結合の濁点で始まり、前の「か」とつながって「がです」になる
+        let corrected = "\u{3099}です"
+        let outcome = await fixture.coordinator.confirm(draft, corrected: corrected, register: [])
+        XCTAssertEqual(outcome.result, .replaced)
+        XCTAssertEqual(field.text, "か" + corrected)
+
+        // 直した文を続けて直すときも同じ規則で判定し、「か」ごと消さない
+        let next = try XCTUnwrap(fixture.coordinator.begin())
+        XCTAssertEqual(next.originalText, corrected)
+        XCTAssertEqual(next.decision, .copyOnly(.characterBoundary))
+    }
+
     func testReadableFieldWithoutInsertionRecordOnlyCopies() throws {
         for baseline in [HaasInsertionBaseline?.none, .unreadable] {
             let fixture = try CorrectionFixture()
