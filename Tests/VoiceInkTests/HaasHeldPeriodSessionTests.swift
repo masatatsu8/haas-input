@@ -31,6 +31,7 @@ final class HaasHeldPeriodSessionTests: XCTestCase {
         XCTAssertEqual(fixture.delivery.ledger.fullText, text)
         XCTAssertEqual(try fixture.savedState().active?.ledger.fullText, text)
         XCTAssertEqual(fixture.delivery.lastDeliveredInput?.text, text)
+        XCTAssertEqual(fixture.delivery.lastDeliveredInput?.allSegmentsPosted, true, "最後の「。」も直前の入力の置き換えに使える")
         XCTAssertEqual(session.recognizedText, text)
     }
 
