@@ -8,7 +8,13 @@ enum HaasPunctuationFormatter {
         "ので", "ですが", "あとで", "けれども", "けれど", "けど", "のに", "ながら",
         "から", "まで", "けども", "たら", "て", "で", "と", "が", "を", "に", "は", "も", "し", "ば", "や", "へ", "より",
     ]
+    /// 区切りの頭がこの形なら、前の区切りの文はまだ続いている。保留した「。」を付けない
+    static let continuationStarts = ["けど", "けれど", "けれども", "けども", "ので", "って", "とか"]
+    /// 区切り全体がこの語だけなら、前の区切りの語尾の続き。1文字の助詞は語の頭と区別できないので、全体の一致でだけ見る
+    static let continuationWholeSegments = ["ね", "よ", "よね", "ねえ", "な", "なあ", "か"]
     private static let punctuation = Set("、。，．,.!?！？".unicodeScalars)
+    /// 区切りの頭にあると、保留した「。」を付けない記号。「.NET」などを妨げないよう半角の「,」「.」は含めない
+    private static let leadingPunctuation = Set("、。，．？！?!".unicodeScalars)
     private static let openingMarks = Set("「『（([{【〈《“‘\"'".unicodeScalars)
     static let closingMarks = Set("」』）)]}】〉》”’\"'".unicodeScalars)
 
@@ -26,6 +32,33 @@ enum HaasPunctuationFormatter {
         }
         let candidate = body + mark + String(String.UnicodeScalarView(scalars[end...]))
         return validatedCandidate(candidate, preserving: text) ?? text
+    }
+
+    /// 区切りの最後のスカラーが「。」なら、それを外した本文を返す。閉じ括弧の内側や、後ろに空白がある「。」は動かさない
+    static func splittingHeldPeriod(_ text: String) -> (body: String, held: Bool) {
+        var body = text.unicodeScalars
+        guard body.last == "。" else { return (text, false) }
+        body.removeLast()
+        guard body.contains(where: { !CharacterSet.whitespacesAndNewlines.contains($0) }) else { return (text, false) }
+        return (String(body), true)
+    }
+
+    /// 次の区切りの整形前の文から、前の区切りの保留した「。」を付けるかを決める。続きの形でなければ文の切れ目とみなす
+    static func startsSentence(_ next: String) -> Bool {
+        let head = String(String.UnicodeScalarView(next.unicodeScalars.drop {
+            CharacterSet.whitespacesAndNewlines.contains($0)
+        }))
+        guard let first = head.unicodeScalars.first else { return true }
+        if leadingPunctuation.contains(first) { return false }
+        if continuationStarts.contains(where: head.hasPrefix) { return false }
+        return !continuationWholeSegments.contains(head.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// 保留した「。」を区切りの頭に付ける。頭 (空白の後) がすでに句読点なら付けない
+    static func attachingHeldPeriod(to text: String) -> String {
+        let first = text.unicodeScalars.first { !CharacterSet.whitespacesAndNewlines.contains($0) }
+        if let first, leadingPunctuation.contains(first) { return text }
+        return "。" + text
     }
 
     static func validatedCandidate(_ candidate: String, preserving original: String) -> String? {
