@@ -52,12 +52,14 @@ struct HaasVocabularyMatcher {
                 let range = tokens[index].range.lowerBound..<tokens[match.end].range.upperBound
                 if Self.hasUnsafeBoundary(tokens[index...match.end], range: range, in: text) { continue }
                 if protectedRanges.contains(where: { $0.overlaps(range) }) { continue }
-                // 書かれた正式表記は書き換えない。ただし、範囲がそれを丸ごと含み、置き換える語もその表記を含むときは、
-                // 長い語の一部として残る (認識が「巽」と書いた「巽雅弘」を「巽雅洋」にする)
+                // 書かれた正式表記は書き換えない。ただし、範囲がそれより長く丸ごと含み、置き換える語にもその表記が
+                // 同じ数以上あるときは、長い語の一部として残る (認識が「巽」と書いた「巽雅弘」を「巽雅洋」にする)
                 if writtenFormRanges.contains(where: { form, found in
                     found.overlaps(range)
                         && !(range.lowerBound <= found.lowerBound && found.upperBound <= range.upperBound
-                            && match.form.contains(form))
+                            && found != range
+                            && Self.occurrences(of: form, in: match.form).count
+                                >= Self.occurrences(of: form, in: String(text[range])).count)
                 }) { continue }
                 output += text[cursor..<range.lowerBound]
                 output += match.form
