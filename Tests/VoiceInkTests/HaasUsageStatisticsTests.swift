@@ -24,7 +24,7 @@ final class HaasUsageStatisticsTests: XCTestCase {
     }
 
     func testCharacterCountIgnoresWhitespaceAndNewlines() {
-        XCTAssertEqual(HaasUsageSample.characterCount("巽さんに 資料を\n送ります。"), 12)
+        XCTAssertEqual(HaasUsageSample.characterCount("斎藤さんに 資料を\n送ります。"), 13)
         XCTAssertEqual(HaasUsageSample.characterCount(" \n"), 0)
     }
 

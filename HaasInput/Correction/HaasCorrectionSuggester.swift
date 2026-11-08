@@ -254,7 +254,7 @@ enum HaasCorrectionSuggester {
             // 2a. 置き換えルールの元の語はカンマで分けて保存されるため、カンマを含む変更は捨てる。
             if containsComma(change.before) || containsComma(change.after) { continue }
             // 3. 辞書の語の表記にかかる変更は捨てる。
-            //    ただし、表記を丸ごと含み、直した後にも同じ数以上残る変更 (巽まさひろ → 巽雅洋) は残す。
+            //    ただし、表記を丸ごと含み、直した後にも同じ数以上残る変更 (斎藤ひろし → 斎藤博) は残す。
             let overlapping = entries.map(\.writtenForm).filter { form in
                 guard !form.isEmpty else { return false }
                 let found = ranges(of: form, in: original).filter { $0.overlaps(change.beforeRange) }

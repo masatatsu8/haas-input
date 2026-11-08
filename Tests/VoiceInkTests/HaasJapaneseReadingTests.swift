@@ -12,12 +12,12 @@ final class HaasJapaneseReadingTests: XCTestCase {
     }
 
     func testTokensCarryReadingKeysAndMarkNonJapaneseTokens() {
-        let tokens = HaasJapaneseReading.tokens(in: "辰美さんとJiHAN 2")
-        XCTAssertEqual(tokens.first?.surface, "辰美")
-        XCTAssertEqual(tokens.first?.key, "たつみ")
+        let tokens = HaasJapaneseReading.tokens(in: "齋藤さんとJiHAN 2")
+        XCTAssertEqual(tokens.first?.surface, "齋藤")
+        XCTAssertEqual(tokens.first?.key, "さいとお")
         XCTAssertEqual(tokens.first(where: { $0.surface == "JiHAN" })?.isJapanese, false)
         XCTAssertEqual(tokens.first(where: { $0.surface == "2" })?.isJapanese, false)
-        let text = "辰美さんとJiHAN 2"
+        let text = "齋藤さんとJiHAN 2"
         XCTAssertTrue(tokens.allSatisfy { String(text[$0.range]) == $0.surface })
     }
 

@@ -24,13 +24,13 @@ final class HaasSessionTranscriptTests: XCTestCase {
             .init(id: UUID(), originalText: "ジハン", replacementText: "自販", dateAdded: Date()),
         ])
         let vocabulary = HaasVocabularyMatcher(entries: [
-            HaasVocabularyEntry(id: UUID(), writtenForm: "巽", readings: ["たつみ"], category: .person),
+            HaasVocabularyEntry(id: UUID(), writtenForm: "斎藤", readings: ["さいとう"], category: .person),
             HaasVocabularyEntry(id: UUID(), writtenForm: "JiHAN", readings: ["じはん"], category: .product),
         ])
         var transcript = HaasSessionTranscript(replacements: plan, vocabulary: vocabulary)
         // 明示的なルールの結果「自販」は、読み (じはん) が登録語と同じでも書き換えない
-        XCTAssertEqual(transcript.commit(id: "a", rawText: "辰美さんのジハンの件"), "巽さんの自販の件")
-        XCTAssertEqual(transcript.text, "巽さんの自販の件")
+        XCTAssertEqual(transcript.commit(id: "a", rawText: "齋藤さんのジハンの件"), "斎藤さんの自販の件")
+        XCTAssertEqual(transcript.text, "斎藤さんの自販の件")
     }
     func testHeldPeriodIsAppendedAsItsOwnSegmentWithoutBreakingPreview() throws {
         var transcript = HaasSessionTranscript(replacements: try WordReplacementPlan(records: []))

@@ -506,13 +506,13 @@ final class HaasInputDeliveryTests: XCTestCase {
         defer { session.cancel(); generator.cancelPending(); fixture.cleanUp() }
         try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
 
-        session.receive(.committed(id: "first", text: "辰美さんの端末ないで"))
+        session.receive(.committed(id: "first", text: "齋藤さんの端末ないで"))
         await waitUntil { generator.requests.count == 1 }
-        XCTAssertEqual(generator.requests, ["巽さんの端末ないで"])
-        try generator.complete(index: 0, result: .success("巽さんの端末内で"))
-        await waitUntil { session.recognizedText == "巽さんの端末内で" }
+        XCTAssertEqual(generator.requests, ["斎藤さんの端末ないで"])
+        try generator.complete(index: 0, result: .success("斎藤さんの端末内で"))
+        await waitUntil { session.recognizedText == "斎藤さんの端末内で" }
         await fixture.delivery.finish(sessionID: session.sessionID)
-        XCTAssertEqual(fixture.paster.calls.map(\.text), ["巽さんの端末内で"])
+        XCTAssertEqual(fixture.paster.calls.map(\.text), ["斎藤さんの端末内で"])
     }
 
     func testProofreadFallsBackToMatchedOriginalWhenGeneratorDoesNotReturnInTime() async throws {
@@ -522,10 +522,10 @@ final class HaasInputDeliveryTests: XCTestCase {
         defer { session.cancel(); generator.cancelPending(); fixture.cleanUp() }
         try await fixture.delivery.begin(sessionID: session.sessionID, target: AvailableInputTarget())
 
-        session.receive(.committed(id: "first", text: "辰美さんの端末ないで"))
-        await waitUntil { session.recognizedText == "巽さんの端末ないで" && fixture.paster.calls.count == 1 }
+        session.receive(.committed(id: "first", text: "齋藤さんの端末ないで"))
+        await waitUntil { session.recognizedText == "斎藤さんの端末ないで" && fixture.paster.calls.count == 1 }
         await fixture.delivery.finish(sessionID: session.sessionID)
-        XCTAssertEqual(fixture.paster.calls.map(\.text), ["巽さんの端末ないで"])
+        XCTAssertEqual(fixture.paster.calls.map(\.text), ["斎藤さんの端末ないで"])
     }
 
     func testProofreadProtectsReplacementRuleOutputs() async throws {
@@ -581,7 +581,7 @@ final class HaasInputDeliveryTests: XCTestCase {
         try HaasDictationSession(
             runtime: .bundled(directory: fixture.root), words: "", inputTarget: nil, onPartialTranscript: nil,
             replacementPlan: WordReplacementPlan(records: []),
-            vocabularyEntries: [HaasVocabularyEntry(id: UUID(), writtenForm: "巽", readings: ["たつみ"], category: .person)],
+            vocabularyEntries: [HaasVocabularyEntry(id: UUID(), writtenForm: "斎藤", readings: ["さいとう"], category: .person)],
             punctuationMode: .proofread, punctuationWorker: worker, delivery: fixture.delivery
         )
     }

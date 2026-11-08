@@ -2,13 +2,13 @@ import XCTest
 @testable import VoiceInk
 
 final class HaasEditTrackerTests: XCTestCase {
-    private let original = "私の名前は巽まさひろです。"
+    private let original = "私の名前は斎藤ひろしです。"
 
     func testOverwritingSelectionGivesOneHunk() {
         var tracker = HaasEditTracker(original: original)
-        tracker.apply(range: NSRange(location: 5, length: 5), replacement: "巽雅洋")
+        tracker.apply(range: NSRange(location: 5, length: 5), replacement: "斎藤博")
         XCTAssertEqual(
-            tracker.hunks(in: "私の名前は巽雅洋です。"),
+            tracker.hunks(in: "私の名前は斎藤博です。"),
             [HaasEditHunk(originalRange: 5..<10, currentRange: 5..<8)])
     }
 
@@ -19,10 +19,10 @@ final class HaasEditTrackerTests: XCTestCase {
         }
         // 消しただけで、まだ何も入れていない
         XCTAssertEqual(tracker.hunks(in: "私の名前はです。"), [])
-        tracker.apply(range: NSRange(location: 5, length: 0), replacement: "巽")
-        tracker.apply(range: NSRange(location: 6, length: 0), replacement: "雅洋")
+        tracker.apply(range: NSRange(location: 5, length: 0), replacement: "斎藤")
+        tracker.apply(range: NSRange(location: 7, length: 0), replacement: "博")
         XCTAssertEqual(
-            tracker.hunks(in: "私の名前は巽雅洋です。"),
+            tracker.hunks(in: "私の名前は斎藤博です。"),
             [HaasEditHunk(originalRange: 5..<10, currentRange: 5..<8)])
     }
 
@@ -34,29 +34,30 @@ final class HaasEditTrackerTests: XCTestCase {
     }
 
     func testSeparateEditsGiveSeparateHunks() {
-        var tracker = HaasEditTracker(original: "辰巳さんの資料です")
-        tracker.apply(range: NSRange(location: 0, length: 2), replacement: "巽")
-        tracker.apply(range: NSRange(location: 4, length: 2), replacement: "書類")
+        var tracker = HaasEditTracker(original: "サイトウさんの資料です")
+        tracker.apply(range: NSRange(location: 0, length: 4), replacement: "斎藤")
+        tracker.apply(range: NSRange(location: 5, length: 2), replacement: "書類")
         XCTAssertEqual(
-            tracker.hunks(in: "巽さんの書類です"),
+            tracker.hunks(in: "斎藤さんの書類です"),
             [
-                HaasEditHunk(originalRange: 0..<2, currentRange: 0..<1),
-                HaasEditHunk(originalRange: 5..<7, currentRange: 4..<6),
+                HaasEditHunk(originalRange: 0..<4, currentRange: 0..<2),
+                HaasEditHunk(originalRange: 7..<9, currentRange: 5..<7),
             ])
     }
 
     func testRepeatedMarkedTextReplacementOnSelection() {
-        // 選んだ「巽まさひろ」の上で日本語入力を始め、変換中の文字を何度も置き換えてから確定する
+        // 選んだ「斎藤ひろし」の上で日本語入力を始め、変換中の文字を何度も置き換えてから確定する
         var tracker = HaasEditTracker(original: original)
-        tracker.apply(range: NSRange(location: 5, length: 5), replacement: "ｔ")
-        tracker.apply(range: NSRange(location: 5, length: 1), replacement: "た")
-        tracker.apply(range: NSRange(location: 5, length: 1), replacement: "たｔ")
-        tracker.apply(range: NSRange(location: 5, length: 2), replacement: "たつ")
-        tracker.apply(range: NSRange(location: 5, length: 2), replacement: "たつみまさひろ")
-        tracker.apply(range: NSRange(location: 5, length: 7), replacement: "巽雅洋")
-        tracker.apply(range: NSRange(location: 5, length: 3), replacement: "巽雅洋")
+        tracker.apply(range: NSRange(location: 5, length: 5), replacement: "ｓ")
+        tracker.apply(range: NSRange(location: 5, length: 1), replacement: "さ")
+        tracker.apply(range: NSRange(location: 5, length: 1), replacement: "さい")
+        tracker.apply(range: NSRange(location: 5, length: 2), replacement: "さいｔ")
+        tracker.apply(range: NSRange(location: 5, length: 3), replacement: "さいと")
+        tracker.apply(range: NSRange(location: 5, length: 3), replacement: "さいとうひろし")
+        tracker.apply(range: NSRange(location: 5, length: 7), replacement: "斎藤博")
+        tracker.apply(range: NSRange(location: 5, length: 3), replacement: "斎藤博")
         XCTAssertEqual(
-            tracker.hunks(in: "私の名前は巽雅洋です。"),
+            tracker.hunks(in: "私の名前は斎藤博です。"),
             [HaasEditHunk(originalRange: 5..<10, currentRange: 5..<8)])
     }
 
@@ -64,8 +65,8 @@ final class HaasEditTrackerTests: XCTestCase {
         var tracker = HaasEditTracker(original: original)
         tracker.apply(range: NSRange(location: 12, length: 2), replacement: "x")
         XCTAssertFalse(tracker.isValid)
-        tracker.apply(range: NSRange(location: 5, length: 5), replacement: "巽雅洋")
-        XCTAssertEqual(tracker.hunks(in: "私の名前は巽雅洋です。"), [])
+        tracker.apply(range: NSRange(location: 5, length: 5), replacement: "斎藤博")
+        XCTAssertEqual(tracker.hunks(in: "私の名前は斎藤博です。"), [])
 
         var notFound = HaasEditTracker(original: original)
         notFound.apply(range: NSRange(location: NSNotFound, length: 0), replacement: "x")
@@ -74,12 +75,12 @@ final class HaasEditTrackerTests: XCTestCase {
 
     func testMismatchedTextInvalidates() {
         var tracker = HaasEditTracker(original: original)
-        tracker.apply(range: NSRange(location: 5, length: 5), replacement: "巽雅洋")
+        tracker.apply(range: NSRange(location: 5, length: 5), replacement: "斎藤博")
         // 取りこぼした置き換えがあると、欄の中身は記録と合わない
-        XCTAssertEqual(tracker.hunks(in: "私の名前は辰巳雅洋です。"), [])
-        tracker.check("私の名前は辰巳雅洋です。")
+        XCTAssertEqual(tracker.hunks(in: "私の名前は斉藤博です。"), [])
+        tracker.check("私の名前は斉藤博です。")
         XCTAssertFalse(tracker.isValid)
-        XCTAssertEqual(tracker.hunks(in: "私の名前は巽雅洋です。"), [])
+        XCTAssertEqual(tracker.hunks(in: "私の名前は斎藤博です。"), [])
     }
 
     func testNormalizationDifferenceCountsAsMismatch() {
