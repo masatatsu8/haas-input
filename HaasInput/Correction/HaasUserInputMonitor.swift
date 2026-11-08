@@ -2,10 +2,18 @@ import AppKit
 import ApplicationServices
 import Carbon
 import Foundation
+import os
 
 /// アプリ自身が送る CGEvent に付ける印。見張りは、この印のあるイベントを利用者の操作として数えない。
 enum HaasSyntheticInput {
     static let marker: Int64 = 0x4841_4153  // "HAAS"
+
+    /// アプリ自身が送った操作か、アプリ自身の窓 (訂正の窓など) への操作。どちらも入力先の欄を変えない。
+    /// アプリが前面にないと、自分の窓への操作も全体監視に届くことがある。
+    /// ただし自分の窓からのドラッグは、選んだ文を入力先の欄へ落とせるので数える
+    static func isOwnEvent(_ input: HaasObservedInput, sourceUserData: Int64, targetPID: Int64, ownPID: Int64) -> Bool {
+        sourceUserData == marker || (targetPID == ownPID && input != .drag)
+    }
 }
 
 /// 入力の後に利用者が行った操作。
@@ -79,6 +87,7 @@ final class HaasUserInputMonitor: HaasInputWatching {
         .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
     ]
 
+    private static let logger = Logger(subsystem: "com.tatsumi.VoiceInkHaas", category: "HaasCorrection")
     private var watch = HaasInputWatch()
     private var globalMonitor: Any?
     private var excludedShortcuts: [Shortcut] = []
@@ -173,8 +182,14 @@ final class HaasUserInputMonitor: HaasInputWatching {
                 MainActor.assumeIsolated {
                     // すでに clean でなければ、それ以上数えることはない
                     guard let self, self.watch.isClean, let observed = Self.observedInput(from: event) else { return }
-                    let isOwn = event.cgEvent?.getIntegerValueField(.eventSourceUserData) == HaasSyntheticInput.marker
+                    let targetPID = event.cgEvent?.getIntegerValueField(.eventTargetUnixProcessID) ?? 0
+                    let isOwn = HaasSyntheticInput.isOwnEvent(
+                        observed, sourceUserData: event.cgEvent?.getIntegerValueField(.eventSourceUserData) ?? 0,
+                        targetPID: targetPID, ownPID: Int64(ProcessInfo.processInfo.processIdentifier))
                     self.watch.record(observed, isOwnEvent: isOwn, shortcuts: self.excludedShortcuts)
+                    if !self.watch.isClean {
+                        Self.logger.notice("watch result=userInput input=\(Self.kind(of: observed), privacy: .public) targetPID=\(targetPID, privacy: .public)")
+                    }
                     self.updatePolling()
                 }
             }
@@ -210,6 +225,16 @@ final class HaasUserInputMonitor: HaasInputWatching {
         } else if let stop = stopPolling {
             stopPolling = nil
             stop()
+        }
+    }
+
+    /// ログに出す操作の種類。キーコードや修飾キーは出さない
+    private static func kind(of input: HaasObservedInput) -> String {
+        switch input {
+        case .keyDown: "keyDown"
+        case .mouseDown: "mouseDown"
+        case .scroll: "scroll"
+        case .drag: "drag"
         }
     }
 

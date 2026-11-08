@@ -122,6 +122,39 @@ final class HaasInputWatchTests: XCTestCase {
             startPolling: { polling.start($0) }, notificationCenter: center, makeGlobalMonitor: makeGlobalMonitor)
     }
 
+    func testEventsToOwnWindowsDoNotCount() throws {
+        // アプリが前面にないとき、訂正の窓への入力やクリックも全体監視に届く
+        var handler: ((NSEvent) -> Void)?
+        let monitor = makeMonitor(makeGlobalMonitor: { handler = $0; return NSObject() })
+        func keyDown(targetPID: Int64) throws -> NSEvent {
+            let event = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true))
+            event.setIntegerValueField(.eventTargetUnixProcessID, value: targetPID)
+            return try XCTUnwrap(NSEvent(cgEvent: event))
+        }
+        func mouse(_ type: CGEventType, targetPID: Int64) throws -> NSEvent {
+            let event = try XCTUnwrap(CGEvent(
+                mouseEventSource: nil, mouseType: type, mouseCursorPosition: .zero, mouseButton: .left))
+            event.setIntegerValueField(.eventTargetUnixProcessID, value: targetPID)
+            return try XCTUnwrap(NSEvent(cgEvent: event))
+        }
+        let ownPID = Int64(ProcessInfo.processInfo.processIdentifier)
+
+        var token = monitor.startWatching()
+        handler?(try keyDown(targetPID: ownPID))
+        handler?(try mouse(.leftMouseDown, targetPID: ownPID))
+        XCTAssertTrue(monitor.isClean(for: token))
+        handler?(try keyDown(targetPID: ownPID + 1))
+        XCTAssertFalse(monitor.isClean(for: token))
+
+        token = monitor.startWatching()
+        handler?(try keyDown(targetPID: 0))
+        XCTAssertFalse(monitor.isClean(for: token), "入力先が分からない操作は数える")
+
+        token = monitor.startWatching()
+        handler?(try mouse(.leftMouseDragged, targetPID: ownPID))
+        XCTAssertFalse(monitor.isClean(for: token), "自分の窓からのドラッグは、入力先の欄へ文を落とせるので数える")
+    }
+
     func testMonitorIsNotCleanWhenGlobalMonitorCannotBeCreated() {
         let monitor = makeMonitor(makeGlobalMonitor: { _ in nil })
         XCTAssertFalse(monitor.isClean(for: monitor.startWatching()))
