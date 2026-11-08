@@ -8,13 +8,13 @@ final class HaasCorrectionSuggesterTests: XCTestCase {
 
     func testSuggestsNewWordWithReadingOfOriginal() {
         let result = HaasCorrectionSuggester.suggestions(
-            original: "辰巳さんの資料です", corrected: "巽さんの資料です", entries: []
+            original: "斉藤さんの資料です", corrected: "斎藤さんの資料です", entries: []
         )
         XCTAssertEqual(result.suggestions.count, 1)
         XCTAssertEqual(result.suggestions.first?.kind, .newWord)
-        XCTAssertEqual(result.suggestions.first?.before, "辰巳")
-        XCTAssertEqual(result.suggestions.first?.writtenForm, "巽")
-        XCTAssertEqual(result.suggestions.first?.reading, "たつみ")
+        XCTAssertEqual(result.suggestions.first?.before, "斉藤")
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "斎藤")
+        XCTAssertEqual(result.suggestions.first?.reading, "さいとう")
     }
 
     func testIgnoresPunctuationOnlyChange() {
@@ -34,28 +34,28 @@ final class HaasCorrectionSuggesterTests: XCTestCase {
     }
 
     func testAddsReadingToExistingWord() {
-        let existing = entry("巽", ["そん"])
-        let result = HaasCorrectionSuggester.suggestions(original: "辰巳さん", corrected: "巽さん", entries: [existing])
+        let existing = entry("斎藤", ["そん"])
+        let result = HaasCorrectionSuggester.suggestions(original: "斉藤さん", corrected: "斎藤さん", entries: [existing])
         XCTAssertEqual(result.suggestions.count, 1)
         XCTAssertEqual(result.suggestions.first?.kind, .addReading(entryID: existing.id))
-        XCTAssertEqual(result.suggestions.first?.reading, "たつみ")
+        XCTAssertEqual(result.suggestions.first?.reading, "さいとう")
     }
 
     func testSkipsWhenWordAlreadyHasReading() {
         let result = HaasCorrectionSuggester.suggestions(
-            original: "辰巳さん", corrected: "巽さん", entries: [entry("巽", ["たつみ"])]
+            original: "斉藤さん", corrected: "斎藤さん", entries: [entry("斎藤", ["さいとう"])]
         )
         XCTAssertTrue(result.suggestions.isEmpty)
     }
 
     func testUsesReplacementWhenReadingBelongsToAnotherWord() {
         let result = HaasCorrectionSuggester.suggestions(
-            original: "辰巳さん", corrected: "巽さん", entries: [entry("竜巳", ["たつみ"])]
+            original: "斉藤さん", corrected: "斎藤さん", entries: [entry("西藤", ["さいとう"])]
         )
         XCTAssertEqual(result.suggestions.count, 1)
         XCTAssertEqual(result.suggestions.first?.kind, .replacement)
-        XCTAssertEqual(result.suggestions.first?.before, "辰巳")
-        XCTAssertEqual(result.suggestions.first?.writtenForm, "巽")
+        XCTAssertEqual(result.suggestions.first?.before, "斉藤")
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "斎藤")
     }
 
     func testUsesReplacementForShortReading() {
@@ -90,23 +90,23 @@ final class HaasCorrectionSuggesterTests: XCTestCase {
     }
 
     func testKanaWrittenFormOfAnotherEntryCountsAsSameReading() {
-        // 「タツミ」は読みがなくても、照合ではカナの正式表記を読み「たつみ」として使う
+        // 「サイトウ」は読みがなくても、照合ではカナの正式表記を読み「さいとう」として使う
         let result = HaasCorrectionSuggester.suggestions(
-            original: "辰巳さんの資料です", corrected: "巽さんの資料です", entries: [entry("タツミ", [])]
+            original: "斉藤さんの資料です", corrected: "斎藤さんの資料です", entries: [entry("サイトウ", [])]
         )
         XCTAssertEqual(result.suggestions.count, 1)
         XCTAssertEqual(result.suggestions.first?.kind, .replacement)
-        XCTAssertEqual(result.suggestions.first?.writtenForm, "巽")
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "斎藤")
     }
 
     func testNewKanaWrittenFormThatCollidesBecomesReplacement() {
-        // 新しい語「タツミ」は、正式表記から読み「たつみ」が増え、「巽」の読みとぶつかる
+        // 新しい語「サイトウ」は、正式表記から読み「さいとう」が増え、「斎藤」の読みとぶつかる
         let result = HaasCorrectionSuggester.suggestions(
-            original: "東京さんの資料です", corrected: "タツミさんの資料です", entries: [entry("巽", ["たつみ"])]
+            original: "東京さんの資料です", corrected: "サイトウさんの資料です", entries: [entry("斎藤", ["さいとう"])]
         )
         XCTAssertEqual(result.suggestions.count, 1)
         XCTAssertEqual(result.suggestions.first?.kind, .replacement)
-        XCTAssertEqual(result.suggestions.first?.writtenForm, "タツミ")
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "サイトウ")
     }
 
     // MARK: - 長い文
@@ -121,12 +121,12 @@ final class HaasCorrectionSuggesterTests: XCTestCase {
         // 前後の共通の語を除くので、全文が長くても違う部分だけを比べる
         let long = String(repeating: "資料を確認します。", count: 1_500)
         let result = HaasCorrectionSuggester.suggestions(
-            original: long + "辰巳さんの資料です。" + long, corrected: long + "巽さんの資料です。" + long, entries: []
+            original: long + "斉藤さんの資料です。" + long, corrected: long + "斎藤さんの資料です。" + long, entries: []
         )
         XCTAssertEqual(result.suggestions.count, 1)
         XCTAssertEqual(result.suggestions.first?.kind, .newWord)
-        XCTAssertEqual(result.suggestions.first?.before, "辰巳")
-        XCTAssertEqual(result.suggestions.first?.writtenForm, "巽")
+        XCTAssertEqual(result.suggestions.first?.before, "斉藤")
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "斎藤")
     }
 
     func testTooLargeDifferenceGivesNoSuggestions() {
@@ -143,29 +143,29 @@ final class HaasCorrectionSuggesterTests: XCTestCase {
 
     func testSkipsChangesInsideDictionaryForm() {
         let result = HaasCorrectionSuggester.suggestions(
-            original: "辰巳商事の資料", corrected: "巽商事の資料",
-            entries: [entry("辰巳商事", ["たつみしょうじ"])]
+            original: "斉藤商事の資料", corrected: "斎藤商事の資料",
+            entries: [entry("斉藤商事", ["さいとうしょうじ"])]
         )
         XCTAssertTrue(result.suggestions.isEmpty)
-        XCTAssertEqual(result.usedDictionaryForms, ["辰巳商事"])
+        XCTAssertEqual(result.usedDictionaryForms, ["斉藤商事"])
     }
 
     // MARK: - 手で直した塊
 
-    private let named = "私の名前は巽まさひろです。"
-    private let renamed = "私の名前は巽雅洋です。"
-    /// 「巽まさひろ」を消して「巽雅洋」を入れた
+    private let named = "私の名前は斎藤ひろしです。"
+    private let renamed = "私の名前は斎藤博です。"
+    /// 「斎藤ひろし」を消して「斎藤博」を入れた
     private let renaming = HaasEditHunk(originalRange: 5..<10, currentRange: 5..<8)
 
     func testWidensChangeToEditedSpan() {
-        for entries in [[], [entry("巽", ["たつみ"])]] {
+        for entries in [[], [entry("斎藤", ["さいとう"])]] {
             let result = HaasCorrectionSuggester.suggestions(
                 original: named, corrected: renamed, entries: entries, hunks: [renaming])
             XCTAssertEqual(result.suggestions.count, 1, "\(entries.map(\.writtenForm))")
             XCTAssertEqual(result.suggestions.first?.kind, .newWord)
-            XCTAssertEqual(result.suggestions.first?.before, "巽まさひろ")
-            XCTAssertEqual(result.suggestions.first?.writtenForm, "巽雅洋")
-            XCTAssertEqual(result.suggestions.first?.reading, "たつみまさひろ")
+            XCTAssertEqual(result.suggestions.first?.before, "斎藤ひろし")
+            XCTAssertEqual(result.suggestions.first?.writtenForm, "斎藤博")
+            XCTAssertEqual(result.suggestions.first?.reading, "さいとうひろし")
             XCTAssertEqual(result.usedDictionaryForms, [])
         }
     }
@@ -174,104 +174,104 @@ final class HaasCorrectionSuggesterTests: XCTestCase {
         let result = HaasCorrectionSuggester.suggestions(original: named, corrected: renamed, entries: [])
         XCTAssertEqual(result.suggestions.count, 1)
         XCTAssertEqual(result.suggestions.first?.kind, .newWord)
-        XCTAssertEqual(result.suggestions.first?.before, "まさひろ")
-        XCTAssertEqual(result.suggestions.first?.writtenForm, "雅洋")
-        XCTAssertEqual(result.suggestions.first?.reading, "まさひろ")
+        XCTAssertEqual(result.suggestions.first?.before, "ひろし")
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "博")
+        XCTAssertEqual(result.suggestions.first?.reading, "ひろし")
     }
 
     func testOverDeletedFunctionWordsAreNotIncluded() {
-        // 文末から「まさひろです。」まで消して「雅洋です。」と打った。「です」で止まる
+        // 文末から「ひろしです。」まで消して「博です。」と打った。「です」で止まる
         let tail = HaasCorrectionSuggester.suggestions(
             original: named, corrected: renamed, entries: [],
-            hunks: [HaasEditHunk(originalRange: 6..<13, currentRange: 6..<11)])
-        XCTAssertEqual(tail.suggestions.map(\.before), ["まさひろ"])
-        XCTAssertEqual(tail.suggestions.map(\.writtenForm), ["雅洋"])
+            hunks: [HaasEditHunk(originalRange: 7..<13, currentRange: 7..<11)])
+        XCTAssertEqual(tail.suggestions.map(\.before), ["ひろし"])
+        XCTAssertEqual(tail.suggestions.map(\.writtenForm), ["博"])
 
-        // 「は巽まさひろ」まで消して「は巽雅洋」と打った。「巽」は含め、「は」で止まる
+        // 「は斎藤ひろし」まで消して「は斎藤博」と打った。「斎藤」は含め、「は」で止まる
         let head = HaasCorrectionSuggester.suggestions(
             original: named, corrected: renamed, entries: [],
             hunks: [HaasEditHunk(originalRange: 4..<10, currentRange: 4..<8)])
-        XCTAssertEqual(head.suggestions.map(\.before), ["巽まさひろ"])
-        XCTAssertEqual(head.suggestions.map(\.writtenForm), ["巽雅洋"])
+        XCTAssertEqual(head.suggestions.map(\.before), ["斎藤ひろし"])
+        XCTAssertEqual(head.suggestions.map(\.writtenForm), ["斎藤博"])
     }
 
     func testRetypedWholeSentenceWidensOnlyToName() {
-        // 文全体を打ち直した。左は「巽」を含めて「は」で、右は「です」で止まる
+        // 文全体を打ち直した。左は「斎藤」を含めて「は」で、右は「です」で止まる
         let result = HaasCorrectionSuggester.suggestions(
-            original: named, corrected: renamed, entries: [entry("巽", ["たつみ"])],
+            original: named, corrected: renamed, entries: [entry("斎藤", ["さいとう"])],
             hunks: [HaasEditHunk(originalRange: 0..<named.utf16.count, currentRange: 0..<renamed.utf16.count)])
         XCTAssertEqual(result.suggestions.count, 1)
         XCTAssertEqual(result.suggestions.first?.kind, .newWord)
-        XCTAssertEqual(result.suggestions.first?.before, "巽まさひろ")
-        XCTAssertEqual(result.suggestions.first?.writtenForm, "巽雅洋")
-        XCTAssertEqual(result.suggestions.first?.reading, "たつみまさひろ")
+        XCTAssertEqual(result.suggestions.first?.before, "斎藤ひろし")
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "斎藤博")
+        XCTAssertEqual(result.suggestions.first?.reading, "さいとうひろし")
     }
 
     func testTooLongWidenedChangeFallsBackToWordChange() {
         // 漢字・カタカナの語が続くので文の頭まで広がり、20文字を超える
         let organization = "国立研究開発法人新エネルギー産業技術総合開発機構"
-        let original = organization + "巽まさひろです。"
-        let corrected = organization + "巽雅洋です。"
+        let original = organization + "斎藤ひろしです。"
+        let corrected = organization + "斎藤博です。"
         let whole = HaasEditHunk(originalRange: 0..<original.utf16.count, currentRange: 0..<corrected.utf16.count)
-        XCTAssertGreaterThan((organization + "巽雅洋").count, HaasCorrectionSuggester.maximumCorrectedLength, "テスト前提")
+        XCTAssertGreaterThan((organization + "斎藤博").count, HaasCorrectionSuggester.maximumCorrectedLength, "テスト前提")
         let result = HaasCorrectionSuggester.suggestions(
             original: original, corrected: corrected, entries: [], hunks: [whole])
         XCTAssertEqual(result.suggestions.count, 1)
-        XCTAssertEqual(result.suggestions.first?.before, "まさひろ")
-        XCTAssertEqual(result.suggestions.first?.writtenForm, "雅洋")
+        XCTAssertEqual(result.suggestions.first?.before, "ひろし")
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "博")
     }
 
     func testEditedSpanChangingDictionaryFormIsStillSkipped() {
-        // 辞書の「巽」を別の表記に変えた
+        // 辞書の「斎藤」を別の表記に変えた
         let result = HaasCorrectionSuggester.suggestions(
-            original: named, corrected: "私の名前は辰巳雅洋です。", entries: [entry("巽", ["たつみ"])],
-            hunks: [HaasEditHunk(originalRange: 5..<10, currentRange: 5..<9)])
+            original: named, corrected: "私の名前は斉藤博です。", entries: [entry("斎藤", ["さいとう"])],
+            hunks: [HaasEditHunk(originalRange: 5..<10, currentRange: 5..<8)])
         XCTAssertTrue(result.suggestions.isEmpty)
-        XCTAssertEqual(result.usedDictionaryForms, ["巽"])
+        XCTAssertEqual(result.usedDictionaryForms, ["斎藤"])
     }
 
     func testChangesWidenedOverSameWordAreMerged() {
-        // 「辰巳東京支店」をまとめて打ち直すと、「東京」を挟む語の差分の2か所が1つになる
+        // 「斉藤東京支店」をまとめて打ち直すと、「東京」を挟む語の差分の2か所が1つになる
         let result = HaasCorrectionSuggester.suggestions(
-            original: "辰巳東京支店", corrected: "巽東京支社", entries: [],
-            hunks: [HaasEditHunk(originalRange: 0..<6, currentRange: 0..<5)])
+            original: "斉藤東京支店", corrected: "斎藤東京支社", entries: [],
+            hunks: [HaasEditHunk(originalRange: 0..<6, currentRange: 0..<6)])
         XCTAssertEqual(result.suggestions.count, 1)
-        XCTAssertEqual(result.suggestions.first?.before, "辰巳東京支店")
-        XCTAssertEqual(result.suggestions.first?.writtenForm, "巽東京支社")
-        XCTAssertEqual(result.suggestions.first?.reading, "たつみとうきょうしてん")
+        XCTAssertEqual(result.suggestions.first?.before, "斉藤東京支店")
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "斎藤東京支社")
+        XCTAssertEqual(result.suggestions.first?.reading, "さいとうとうきょうしてん")
     }
 
     func testFunctionWordsAcrossChangesAreNotMerged() {
-        // 「辰巳さんの資料」をまとめて打ち直しても、間の「さん」「の」はひらがななので広げない
+        // 「斉藤さんの資料」をまとめて打ち直しても、間の「さん」「の」はひらがななので広げない
         let result = HaasCorrectionSuggester.suggestions(
-            original: "辰巳さんの資料です", corrected: "巽さんの書類です", entries: [],
-            hunks: [HaasEditHunk(originalRange: 0..<7, currentRange: 0..<6)])
-        XCTAssertEqual(result.suggestions.map(\.before), ["辰巳", "資料"])
-        XCTAssertEqual(result.suggestions.map(\.writtenForm), ["巽", "書類"])
+            original: "斉藤さんの資料です", corrected: "斎藤さんの書類です", entries: [],
+            hunks: [HaasEditHunk(originalRange: 0..<7, currentRange: 0..<7)])
+        XCTAssertEqual(result.suggestions.map(\.before), ["斉藤", "資料"])
+        XCTAssertEqual(result.suggestions.map(\.writtenForm), ["斎藤", "書類"])
     }
 
     func testDoesNotWidenAcrossSeparatorsBetweenWords() {
         // トークナイザーは「。」「・」空白を語にしないので、語の間に残る。そこを越えて広げない
         for separator in ["。", "・", " "] {
-            let original = "辰巳\(separator)東京支店"
-            let corrected = "巽\(separator)東京支社"
+            let original = "斉藤\(separator)東京支店"
+            let corrected = "斎藤\(separator)東京支社"
             let result = HaasCorrectionSuggester.suggestions(
                 original: original, corrected: corrected, entries: [],
                 hunks: [HaasEditHunk(originalRange: 0..<original.utf16.count, currentRange: 0..<corrected.utf16.count)])
-            XCTAssertEqual(result.suggestions.map(\.before), ["辰巳", "東京支店"], separator)
-            XCTAssertEqual(result.suggestions.map(\.writtenForm), ["巽", "東京支社"], separator)
+            XCTAssertEqual(result.suggestions.map(\.before), ["斉藤", "東京支店"], separator)
+            XCTAssertEqual(result.suggestions.map(\.writtenForm), ["斎藤", "東京支社"], separator)
         }
     }
 
     func testChangingOneOfRepeatedDictionaryFormsIsStillSkipped() {
-        // 塊の中の辞書の「巽」2つのうち1つを「辰巳」に変えた。もう1つが残っていても候補にしない
-        let original = "巽東京巽まさひろ"
-        let corrected = "辰巳東京巽雅洋"
+        // 塊の中の辞書の「斎藤」2つのうち1つを「斉藤」に変えた。もう1つが残っていても候補にしない
+        let original = "斎藤東京斎藤ひろし"
+        let corrected = "斉藤東京斎藤博"
         let result = HaasCorrectionSuggester.suggestions(
-            original: original, corrected: corrected, entries: [entry("巽", ["たつみ"])],
+            original: original, corrected: corrected, entries: [entry("斎藤", ["さいとう"])],
             hunks: [HaasEditHunk(originalRange: 0..<original.utf16.count, currentRange: 0..<corrected.utf16.count)])
         XCTAssertTrue(result.suggestions.isEmpty)
-        XCTAssertEqual(result.usedDictionaryForms, ["巽"])
+        XCTAssertEqual(result.usedDictionaryForms, ["斎藤"])
     }
 
     func testMergedChangeTooLongFallsBackToWordChanges() {
@@ -291,18 +291,18 @@ final class HaasCorrectionSuggesterTests: XCTestCase {
         for surface in ["です", "は", "すごーい", "。", "、", "・", "「", "ー", "　", "ゝ"] {
             XCTAssertTrue(HaasCorrectionDiff.stopsWidening(surface), surface)
         }
-        for surface in ["巽", "お願い", "マサヒロ", "ジー", "ABC", "２０２６", "佐々木"] {
+        for surface in ["斎藤", "お願い", "ヒロシ", "ジー", "ABC", "２０２６", "佐々木"] {
             XCTAssertFalse(HaasCorrectionDiff.stopsWidening(surface), surface)
         }
     }
 
     func testHunkAwayFromChangeLeavesItAsIs() {
-        // 「です」を消して打ち直しても、「辰巳 → 巽」は広げない
+        // 「です」を消して打ち直しても、「サイトウ → 斎藤」は広げない
         let result = HaasCorrectionSuggester.suggestions(
-            original: "辰巳さんの資料です", corrected: "巽さんの資料です", entries: [],
-            hunks: [HaasEditHunk(originalRange: 7..<9, currentRange: 6..<8)])
+            original: "サイトウさんの資料です", corrected: "斎藤さんの資料です", entries: [],
+            hunks: [HaasEditHunk(originalRange: 9..<11, currentRange: 7..<9)])
         XCTAssertEqual(result.suggestions.count, 1)
-        XCTAssertEqual(result.suggestions.first?.before, "辰巳")
-        XCTAssertEqual(result.suggestions.first?.writtenForm, "巽")
+        XCTAssertEqual(result.suggestions.first?.before, "サイトウ")
+        XCTAssertEqual(result.suggestions.first?.writtenForm, "斎藤")
     }
 }

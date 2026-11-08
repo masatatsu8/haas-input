@@ -8,27 +8,27 @@ final class HaasVocabularyMatcherTests: XCTestCase {
 
     func testReplacesMisrecognizedSpansWhoseReadingMatchesAnEntry() {
         let matcher = HaasVocabularyMatcher(entries: [
-            entry("巽", ["たつみ"], .person), entry("JiHAN Prime", ["ジハンプライム"], .product),
+            entry("斎藤", ["さいとう"], .person), entry("JiHAN Prime", ["ジハンプライム"], .product),
             entry("Haas", ["ハース"], .product),
         ])
-        XCTAssertEqual(matcher.apply(to: "辰美さんに次半プライムの改正内容を確認します。"),
-                       "巽さんにJiHAN Primeの改正内容を確認します。")
+        XCTAssertEqual(matcher.apply(to: "齋藤さんに次半プライムの改正内容を確認します。"),
+                       "斎藤さんにJiHAN Primeの改正内容を確認します。")
         XCTAssertEqual(matcher.apply(to: "明日の会議でハースの精度を報告します。"), "明日の会議でHaasの精度を報告します。")
     }
 
     func testKeepsTextThatAlreadyUsesTheWrittenForm() {
-        let matcher = HaasVocabularyMatcher(entries: [entry("JiHAN Prime", ["ジハンプライム"]), entry("巽", ["たつみ"])])
-        XCTAssertEqual(matcher.apply(to: "JiHAN Primeの件で巽さんに連絡します。"), "JiHAN Primeの件で巽さんに連絡します。")
+        let matcher = HaasVocabularyMatcher(entries: [entry("JiHAN Prime", ["ジハンプライム"]), entry("斎藤", ["さいとう"])])
+        XCTAssertEqual(matcher.apply(to: "JiHAN Primeの件で斎藤さんに連絡します。"), "JiHAN Primeの件で斎藤さんに連絡します。")
     }
 
     func testIgnoresShortReadingsAmbiguousKeysAndNonJapaneseTokens() {
         let matcher = HaasVocabularyMatcher(entries: [
             entry("可", ["か"]), entry("SEI", ["せい"]),
-            entry("立見", ["たつみ"]), entry("龍美", ["タツミ"]),
+            entry("西藤", ["さいとう"]), entry("齊藤", ["サイトウ"]),
             entry("ジハン", ["じはん"]),
         ])
         XCTAssertEqual(matcher.apply(to: "せいかの確認"), "せいかの確認")
-        XCTAssertEqual(matcher.apply(to: "辰美さん"), "辰美さん")
+        XCTAssertEqual(matcher.apply(to: "齋藤さん"), "齋藤さん")
         XCTAssertEqual(matcher.apply(to: "JiHAN の件"), "JiHAN の件")
     }
 
@@ -57,26 +57,26 @@ final class HaasVocabularyMatcherTests: XCTestCase {
     }
 
     func testLongerEntryContainingAnotherWrittenFormStillMatches() {
-        // 認識が登録済みの「巽」を書いても、それを丸ごと含み、正式表記にも「巽」を残す長い語には置き換える
-        let matcher = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"]), entry("巽雅洋", ["たつみまさひろ"])])
-        XCTAssertEqual(matcher.apply(to: "私の名前は巽雅弘です。"), "私の名前は巽雅洋です。")
-        XCTAssertEqual(matcher.apply(to: "私の名前は辰巳雅弘です。"), "私の名前は巽雅洋です。")
-        XCTAssertEqual(matcher.apply(to: "私の名前は巽雅洋です。"), "私の名前は巽雅洋です。")
-        // 正式表記に「巽」を残さない語には置き換えない
-        let other = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"]), entry("立見雅洋", ["たつみまさひろ"])])
-        XCTAssertEqual(other.apply(to: "巽雅弘さん"), "巽雅弘さん")
+        // 認識が登録済みの「斎藤」を書いても、それを丸ごと含み、正式表記にも「斎藤」を残す長い語には置き換える
+        let matcher = HaasVocabularyMatcher(entries: [entry("斎藤", ["さいとう"]), entry("斎藤博", ["さいとうひろし"])])
+        XCTAssertEqual(matcher.apply(to: "私の名前は斎藤浩です。"), "私の名前は斎藤博です。")
+        XCTAssertEqual(matcher.apply(to: "私の名前は斉藤浩です。"), "私の名前は斎藤博です。")
+        XCTAssertEqual(matcher.apply(to: "私の名前は斎藤博です。"), "私の名前は斎藤博です。")
+        // 正式表記に「斎藤」を残さない語には置き換えない
+        let other = HaasVocabularyMatcher(entries: [entry("斎藤", ["さいとう"]), entry("西藤博", ["さいとうひろし"])])
+        XCTAssertEqual(other.apply(to: "斎藤浩さん"), "斎藤浩さん")
         // 登録済みの語が範囲からはみ出す (一部だけ重なる) 場合も置き換えない
-        let partial = HaasVocabularyMatcher(entries: [entry("雅弘さん", []), entry("巽雅洋", ["たつみまさひろ"])])
-        XCTAssertEqual(partial.apply(to: "巽雅弘さん"), "巽雅弘さん")
+        let partial = HaasVocabularyMatcher(entries: [entry("浩さん", []), entry("斎藤博", ["さいとうひろし"])])
+        XCTAssertEqual(partial.apply(to: "斎藤浩さん"), "斎藤浩さん")
         // 登録語そのものの範囲は、それを含む別の語にしない
         let same = HaasVocabularyMatcher(entries: [entry("次半", []), entry("次半Prime", ["じはん"])])
         XCTAssertEqual(same.apply(to: "次半の件"), "次半の件")
         // 範囲の中の登録語を、置き換えで減らさない
-        let twice = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"]), entry("巽辰巳", ["たつみたつみ"])])
-        XCTAssertEqual(twice.apply(to: "巽巽"), "巽巽")
+        let twice = HaasVocabularyMatcher(entries: [entry("斎藤", ["さいとう"]), entry("斎藤斉藤", ["さいとうさいとう"])])
+        XCTAssertEqual(twice.apply(to: "斎藤斎藤"), "斎藤斎藤")
         // 保護語に重なる範囲は今までどおり置き換えない
-        let protected = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"]), entry("巽雅洋", ["たつみまさひろ"])])
-        XCTAssertEqual(protected.apply(to: "巽雅弘です", protecting: ["巽雅弘"]), "巽雅弘です")
+        let protected = HaasVocabularyMatcher(entries: [entry("斎藤", ["さいとう"]), entry("斎藤博", ["さいとうひろし"])])
+        XCTAssertEqual(protected.apply(to: "斎藤浩です", protecting: ["斎藤浩"]), "斎藤浩です")
     }
 
     func testGapRuleJoinsOnSpaceAndMiddleDotButBreaksOnPunctuation() {
@@ -106,22 +106,22 @@ final class HaasVocabularyMatcherTests: XCTestCase {
     }
 
     func testSurroundingSpacesAndPunctuationArePreserved() {
-        let matcher = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"])])
-        XCTAssertEqual(matcher.apply(to: " 「辰美さん」 、 確認 "), " 「巽さん」 、 確認 ")
+        let matcher = HaasVocabularyMatcher(entries: [entry("斎藤", ["さいとう"])])
+        XCTAssertEqual(matcher.apply(to: " 「齋藤さん」 、 確認 "), " 「斎藤さん」 、 確認 ")
     }
 
     func testWrittenFormsAreTrimmedAndDeduplicated() {
-        let matcher = HaasVocabularyMatcher(entries: [entry(" Haas ", []), entry("Haas", []), entry("  ", []), entry("巽", [])])
-        XCTAssertEqual(matcher.writtenForms, ["Haas", "巽"])
+        let matcher = HaasVocabularyMatcher(entries: [entry(" Haas ", []), entry("Haas", []), entry("  ", []), entry("斎藤", [])])
+        XCTAssertEqual(matcher.writtenForms, ["Haas", "斎藤"])
     }
 
     func testEmptyMatcherReturnsInputUnchanged() {
-        XCTAssertEqual(HaasVocabularyMatcher.empty.apply(to: "辰美さん"), "辰美さん")
+        XCTAssertEqual(HaasVocabularyMatcher.empty.apply(to: "齋藤さん"), "齋藤さん")
     }
 
     func testOrdinaryJapaneseStaysUnchanged() {
         let matcher = HaasVocabularyMatcher(entries: [
-            entry("Haas", ["ハース"], .product), entry("巽", ["たつみ"], .person),
+            entry("Haas", ["ハース"], .product), entry("斎藤", ["さいとう"], .person),
             entry("JiHAN Prime", ["ジハンプライム"], .product), entry("JiHAN", ["じはん"]),
         ])
         for sentence in ["会議は明日です", "私は明日休みます", "今日は明日の準備をします",
@@ -132,8 +132,8 @@ final class HaasVocabularyMatcherTests: XCTestCase {
 
     func testKanjiNameInsideLongerCompoundIsLeftAlone() {
         // 受け入れる代償: 漢字に挟まれた範囲は、正しい誤認識でも置換しない。
-        let matcher = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"], .person)])
-        XCTAssertEqual(matcher.apply(to: "辰美部長に連絡"), "辰美部長に連絡")
+        let matcher = HaasVocabularyMatcher(entries: [entry("斎藤", ["さいとう"], .person)])
+        XCTAssertEqual(matcher.apply(to: "齋藤部長に連絡"), "齋藤部長に連絡")
     }
 
     func testKanjiWithoutReadingNeverJoinsASpan() {
@@ -148,7 +148,7 @@ final class HaasVocabularyMatcherTests: XCTestCase {
     }
 
     func testFallsBackToShorterCandidateWhenLongestIsRejected() {
-        let matcher = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"], .person), entry("Tatsumito", ["たつみと"])])
-        XCTAssertEqual(matcher.apply(to: "辰美と話す"), "巽と話す")
+        let matcher = HaasVocabularyMatcher(entries: [entry("斎藤", ["さいとう"], .person), entry("Saitoto", ["さいとうと"])])
+        XCTAssertEqual(matcher.apply(to: "齋藤と話す"), "斎藤と話す")
     }
 }

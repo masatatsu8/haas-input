@@ -197,15 +197,15 @@ final class HaasPunctuationWorkerTests: XCTestCase {
         let done = expectation(description: "done")
         generator.onStarted = { _ in started.fulfill() }
         var result: HaasPunctuationOutcome?
-        XCTAssertTrue(worker.submit("巽さんの端末ないで", requestID: UUID(), protectedTerms: ["巽"]) {
+        XCTAssertTrue(worker.submit("斎藤さんの端末ないで", requestID: UUID(), protectedTerms: ["斎藤"]) {
             result = $0
             done.fulfill()
         })
         await fulfillment(of: [started], timeout: 1)
-        try generator.complete(index: 0, result: .success("巽さんの端末内で"))
+        try generator.complete(index: 0, result: .success("斎藤さんの端末内で"))
         await fulfillment(of: [done], timeout: 1)
-        XCTAssertEqual(result, .formatted("巽さんの端末内で"))
-        XCTAssertEqual(seenTerms, ["巽"])
+        XCTAssertEqual(result, .formatted("斎藤さんの端末内で"))
+        XCTAssertEqual(seenTerms, ["斎藤"])
     }
 
     func testDefaultValidatorStillRejectsWordChangesForPunctuationOnlyMode() async throws {

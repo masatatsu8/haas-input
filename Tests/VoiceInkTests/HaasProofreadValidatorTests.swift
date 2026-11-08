@@ -100,7 +100,7 @@ final class HaasProofreadValidatorTests: XCTestCase {
         XCTAssertNil(HaasProofreadValidator.validatedCandidate(
             "jihan primeの資料です", preserving: "JiHAN Primeの資料です", protectedTerms: []))
         XCTAssertNil(HaasProofreadValidator.validatedCandidate(
-            "辰巳さんの資料です", preserving: "巽さんの資料です", protectedTerms: ["巽"]))
+            "斉藤さんの資料です", preserving: "斎藤さんの資料です", protectedTerms: ["斎藤"]))
         XCTAssertNil(HaasProofreadValidator.validatedCandidate("予算は3万円です", preserving: "予算は-3万円です", protectedTerms: []))
         XCTAssertNil(HaasProofreadValidator.validatedCandidate("値は3/5です", preserving: "値は3.5です", protectedTerms: []))
         XCTAssertNil(HaasProofreadValidator.validatedCandidate("foo-barを使います", preserving: "foo_barを使います", protectedTerms: []))
