@@ -56,6 +56,29 @@ final class HaasVocabularyMatcherTests: XCTestCase {
         XCTAssertEqual(matcher.apply(to: "自販"), "JiHAN")
     }
 
+    func testLongerEntryContainingAnotherWrittenFormStillMatches() {
+        // 認識が登録済みの「巽」を書いても、それを丸ごと含み、正式表記にも「巽」を残す長い語には置き換える
+        let matcher = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"]), entry("巽雅洋", ["たつみまさひろ"])])
+        XCTAssertEqual(matcher.apply(to: "私の名前は巽雅弘です。"), "私の名前は巽雅洋です。")
+        XCTAssertEqual(matcher.apply(to: "私の名前は辰巳雅弘です。"), "私の名前は巽雅洋です。")
+        XCTAssertEqual(matcher.apply(to: "私の名前は巽雅洋です。"), "私の名前は巽雅洋です。")
+        // 正式表記に「巽」を残さない語には置き換えない
+        let other = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"]), entry("立見雅洋", ["たつみまさひろ"])])
+        XCTAssertEqual(other.apply(to: "巽雅弘さん"), "巽雅弘さん")
+        // 登録済みの語が範囲からはみ出す (一部だけ重なる) 場合も置き換えない
+        let partial = HaasVocabularyMatcher(entries: [entry("雅弘さん", []), entry("巽雅洋", ["たつみまさひろ"])])
+        XCTAssertEqual(partial.apply(to: "巽雅弘さん"), "巽雅弘さん")
+        // 登録語そのものの範囲は、それを含む別の語にしない
+        let same = HaasVocabularyMatcher(entries: [entry("次半", []), entry("次半Prime", ["じはん"])])
+        XCTAssertEqual(same.apply(to: "次半の件"), "次半の件")
+        // 範囲の中の登録語を、置き換えで減らさない
+        let twice = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"]), entry("巽辰巳", ["たつみたつみ"])])
+        XCTAssertEqual(twice.apply(to: "巽巽"), "巽巽")
+        // 保護語に重なる範囲は今までどおり置き換えない
+        let protected = HaasVocabularyMatcher(entries: [entry("巽", ["たつみ"]), entry("巽雅洋", ["たつみまさひろ"])])
+        XCTAssertEqual(protected.apply(to: "巽雅弘です", protecting: ["巽雅弘"]), "巽雅弘です")
+    }
+
     func testGapRuleJoinsOnSpaceAndMiddleDotButBreaksOnPunctuation() {
         let matcher = HaasVocabularyMatcher(entries: [entry("X", ["じはんぷらいむ"])])
         XCTAssertEqual(matcher.apply(to: "次半プライム"), "X")

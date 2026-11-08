@@ -39,11 +39,14 @@ struct HaasCorrectionNotice: Equatable {
 @MainActor
 final class HaasCorrectionPanelModel: ObservableObject {
     let draft: HaasCorrectionDraft
-    private let suggest: (String) -> HaasSuggestionResult
+    private let suggest: (String, [HaasEditHunk]) -> HaasSuggestionResult
+    /// 欄で元の文のどこを消したかの記録。欄を通らずに corrected が変わったら使わない
+    private var edits: HaasEditTracker
 
     @Published var corrected: String {
         didSet {
             guard corrected != oldValue else { return }
+            edits.check(corrected)
             rebuildSuggestions()
         }
     }
@@ -51,11 +54,13 @@ final class HaasCorrectionPanelModel: ObservableObject {
     @Published var selectedIDs: Set<Int> = []
     @Published private(set) var notice: String?
 
-    init(draft: HaasCorrectionDraft, suggest: @escaping (String) -> HaasSuggestionResult) {
+    /// - suggest: 直した文と、欄で手で直した塊から候補を作る
+    init(draft: HaasCorrectionDraft, suggest: @escaping (String, [HaasEditHunk]) -> HaasSuggestionResult) {
         self.draft = draft
         self.suggest = suggest
+        edits = HaasEditTracker(original: draft.originalText)
         corrected = draft.originalText
-        apply(suggest(draft.originalText), previous: [], previousSelectedIDs: [])
+        apply(suggest(draft.originalText, []), previous: [], previousSelectedIDs: [])
     }
 
     var primaryButtonTitle: String {
@@ -107,8 +112,23 @@ final class HaasCorrectionPanelModel: ObservableObject {
         suggestions[index].reading = reading
     }
 
+    /// 欄の range が replacement に置き換わる直前に、欄から呼ぶ。
+    /// 取り消し・やり直しで戻った文字は元の文の位置に結びつけられないので、それまでの記録ごと使わない
+    func recordEdit(range: NSRange, replacement: String, isUndoOrRedo: Bool) {
+        if isUndoOrRedo {
+            edits.invalidate()
+        } else {
+            edits.apply(range: range, replacement: replacement)
+        }
+    }
+
+    /// 欄の文を外から書き換えたとき。それまでの記録は欄の中身と結びつかない
+    func discardEdits() {
+        edits.invalidate()
+    }
+
     private func rebuildSuggestions() {
-        apply(suggest(corrected), previous: suggestions, previousSelectedIDs: selectedIDs)
+        apply(suggest(corrected, edits.hunks(in: corrected)), previous: suggestions, previousSelectedIDs: selectedIDs)
     }
 
     /// 候補を作り直す。前の選択と読みの修正は、同じ before と writtenForm の候補にだけ引き継ぐ
@@ -139,8 +159,14 @@ final class HaasCorrectionPanelModel: ObservableObject {
 /// 直す文を入れる欄。NSTextView なので日本語入力の変換が使える
 private struct HaasCorrectionTextEditor: NSViewRepresentable {
     @Binding var text: String
+    /// 欄の文字が置き換わる直前。変換中の文字の置き換えも含む。3つ目は取り消し・やり直しのとき true
+    let willReplace: (NSRange, String, Bool) -> Void
+    /// 欄の文を外から書き換えた後
+    let didResetText: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, willReplace: willReplace, didResetText: didResetText)
+    }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
@@ -166,12 +192,38 @@ private struct HaasCorrectionTextEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
         // 変換中の文字を壊さない
-        if textView.string != text, !textView.hasMarkedText() { textView.string = text }
+        if textView.string != text, !textView.hasMarkedText() {
+            textView.string = text
+            context.coordinator.didResetText()
+        }
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
-        init(text: Binding<String>) { self.text = text }
+        let willReplace: (NSRange, String, Bool) -> Void
+        let didResetText: () -> Void
+
+        init(
+            text: Binding<String>, willReplace: @escaping (NSRange, String, Bool) -> Void,
+            didResetText: @escaping () -> Void
+        ) {
+            self.text = text
+            self.willReplace = willReplace
+            self.didResetText = didResetText
+        }
+
+        func textView(
+            _ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?
+        ) -> Bool {
+            // nil は文字を変えない (属性だけの) 変更
+            if let replacementString {
+                let undoManager = textView.undoManager
+                willReplace(
+                    affectedCharRange, replacementString,
+                    undoManager?.isUndoing == true || undoManager?.isRedoing == true)
+            }
+            return true
+        }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
@@ -187,8 +239,12 @@ private struct HaasCorrectionPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HaasCorrectionTextEditor(text: $model.corrected)
-                .frame(minHeight: 110)
+            HaasCorrectionTextEditor(
+                text: $model.corrected,
+                willReplace: { [model] in model.recordEdit(range: $0, replacement: $1, isUndoOrRedo: $2) },
+                didResetText: { [model] in model.discardEdits() }
+            )
+            .frame(minHeight: 110)
 
             if !model.suggestions.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -316,7 +372,9 @@ final class HaasCorrectionPanelController: NSObject, NSWindowDelegate {
             notify("直す入力がありません", .info)
             return
         }
-        let model = HaasCorrectionPanelModel(draft: draft) { [coordinator] in coordinator.suggestions(for: $0) }
+        let model = HaasCorrectionPanelModel(draft: draft) { [coordinator] in
+            coordinator.suggestions(for: $0, hunks: $1)
+        }
         self.model = model
         let view = HaasCorrectionPanelView(
             model: model, onConfirm: { [weak self] in self?.confirm() }, onCancel: { [weak self] in self?.close() })
