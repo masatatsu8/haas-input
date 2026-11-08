@@ -81,4 +81,16 @@ final class HaasEditTrackerTests: XCTestCase {
         XCTAssertFalse(tracker.isValid)
         XCTAssertEqual(tracker.hunks(in: "私の名前は巽雅洋です。"), [])
     }
+
+    func testNormalizationDifferenceCountsAsMismatch() {
+        // 「が」を1文字 (U+304C) で持つ記録に、「か」+濁点 (U+304B U+3099) の欄は合わない
+        let composed = "がっこう"
+        let decomposed = "\u{304B}\u{3099}っこう"
+        XCTAssertEqual(composed, decomposed, "テスト前提: String の == では等しい")
+        var tracker = HaasEditTracker(original: composed)
+        tracker.apply(range: NSRange(location: 1, length: 1), replacement: "ッ")
+        XCTAssertEqual(tracker.hunks(in: "\u{304B}\u{3099}ッこう"), [])
+        tracker.check(decomposed)
+        XCTAssertFalse(tracker.isValid)
+    }
 }

@@ -91,7 +91,7 @@ final class HaasCorrectionPanelModelTests: XCTestCase {
             received.append(hunks)
             return HaasSuggestionResult(suggestions: [], usedDictionaryForms: [])
         }
-        model.recordEdit(range: NSRange(location: 5, length: 5), replacement: "巽雅洋")
+        model.recordEdit(range: NSRange(location: 5, length: 5), replacement: "巽雅洋", isUndoOrRedo: false)
         model.corrected = "私の名前は巽雅洋です。"
         XCTAssertEqual(received.last, [HaasEditHunk(originalRange: 5..<10, currentRange: 5..<8)])
     }
@@ -106,7 +106,7 @@ final class HaasCorrectionPanelModelTests: XCTestCase {
         // 欄を通らない書き換えが1度でもあれば、元の文に戻しても塊を渡さない
         model.corrected = "私の名前は巽まさひろでした。"
         model.corrected = "私の名前は巽まさひろです。"
-        model.recordEdit(range: NSRange(location: 5, length: 5), replacement: "巽雅洋")
+        model.recordEdit(range: NSRange(location: 5, length: 5), replacement: "巽雅洋", isUndoOrRedo: false)
         model.corrected = "私の名前は巽雅洋です。"
         XCTAssertEqual(received.last, [])
 
@@ -115,9 +115,26 @@ final class HaasCorrectionPanelModelTests: XCTestCase {
             received.append(hunks)
             return HaasSuggestionResult(suggestions: [], usedDictionaryForms: [])
         }
-        reset.recordEdit(range: NSRange(location: 5, length: 5), replacement: "巽雅洋")
+        reset.recordEdit(range: NSRange(location: 5, length: 5), replacement: "巽雅洋", isUndoOrRedo: false)
         reset.discardEdits()
         reset.corrected = "私の名前は巽雅洋です。"
+        XCTAssertEqual(received.last, [])
+    }
+
+    func testUndoOrRedoDropsEdits() {
+        // 全体を書き換えてから取り消すと、戻った文字は元の文の位置に結びつかない
+        let original = "私の名前は巽まさひろです。"
+        var received: [[HaasEditHunk]] = []
+        let model = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord), text: original)) { _, hunks in
+            received.append(hunks)
+            return HaasSuggestionResult(suggestions: [], usedDictionaryForms: [])
+        }
+        model.recordEdit(range: NSRange(location: 0, length: 13), replacement: "別の文", isUndoOrRedo: false)
+        model.corrected = "別の文"
+        model.recordEdit(range: NSRange(location: 0, length: 3), replacement: original, isUndoOrRedo: true)
+        model.corrected = original
+        model.recordEdit(range: NSRange(location: 6, length: 4), replacement: "雅洋", isUndoOrRedo: false)
+        model.corrected = "私の名前は巽雅洋です。"
         XCTAssertEqual(received.last, [])
     }
 

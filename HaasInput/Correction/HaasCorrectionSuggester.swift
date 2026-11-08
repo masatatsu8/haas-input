@@ -99,8 +99,9 @@ enum HaasCorrectionDiff {
     }
 
     /// 手で直した塊に重なる変更を、外側へ向かって、同じ塊の中で消して打ち直した共通の語が続く間だけ広げる。
-    /// 広げるのを止める語 (stopsWidening) に当たったら、その語から先は含めない。
-    /// 広げた後が長すぎる変更は広げない。広げて重なった変更は1つにまとめる
+    /// 広げるのを止める語 (stopsWidening) や、語の間の句読点・記号・空白に当たったら、そこから先は含めない。
+    /// 広げた後が長すぎる変更は広げない。広げて重なった変更は1つにまとめ、まとめた後が長すぎれば、
+    /// まとめた変更をどれも広げる前の形で返す
     private static func widened(
         _ spans: [Span], by hunks: [HaasEditHunk], original: String, corrected: String,
         old: [HaasReadingToken], new: [HaasReadingToken]
@@ -112,46 +113,60 @@ enum HaasCorrectionDiff {
             return (originalRange, currentRange)
         }
         let limit = HaasCorrectionSuggester.maximumCorrectedLength
-        var result: [Span] = []
-        for span in spans {
-            var current = span
-            let beforeRange = range(of: span.old, in: old)
-            let overlapping = edited.filter { $0.original.overlaps(beforeRange) }
-            if !overlapping.isEmpty {
-                func retyped(_ i: Int, _ j: Int) -> Bool {
-                    old[i].surface == new[j].surface && !stopsWidening(old[i].surface)
-                        && overlapping.contains { encloses($0.original, old[i].range) && encloses($0.current, new[j].range) }
-                }
-                var wide = span
-                while wide.old.lowerBound > 0, wide.new.lowerBound > 0,
-                    retyped(wide.old.lowerBound - 1, wide.new.lowerBound - 1)
-                {
-                    wide = Span(
-                        old: (wide.old.lowerBound - 1)..<wide.old.upperBound,
-                        new: (wide.new.lowerBound - 1)..<wide.new.upperBound)
-                }
-                while wide.old.upperBound < old.count, wide.new.upperBound < new.count,
-                    retyped(wide.old.upperBound, wide.new.upperBound)
-                {
-                    wide = Span(
-                        old: wide.old.lowerBound..<(wide.old.upperBound + 1),
-                        new: wide.new.lowerBound..<(wide.new.upperBound + 1))
-                }
-                if original[range(of: wide.old, in: old)].count <= limit,
-                    corrected[range(of: wide.new, in: new)].count <= limit
-                {
-                    current = wide
-                }
-            }
-            while let last = result.last, last.old.overlaps(current.old) || last.new.overlaps(current.new) {
-                result.removeLast()
-                current = Span(
-                    old: min(last.old.lowerBound, current.old.lowerBound)..<max(last.old.upperBound, current.old.upperBound),
-                    new: min(last.new.lowerBound, current.new.lowerBound)..<max(last.new.upperBound, current.new.upperBound))
-            }
-            result.append(current)
+        func fits(_ span: Span) -> Bool {
+            original[range(of: span.old, in: old)].count <= limit && corrected[range(of: span.new, in: new)].count <= limit
         }
-        return result
+        func widen(_ span: Span) -> Span {
+            let overlapping = edited.filter { $0.original.overlaps(range(of: span.old, in: old)) }
+            guard !overlapping.isEmpty else { return span }
+            func retyped(_ i: Int, _ j: Int) -> Bool {
+                old[i].surface == new[j].surface && !stopsWidening(old[i].surface)
+                    && overlapping.contains { encloses($0.original, old[i].range) && encloses($0.current, new[j].range) }
+            }
+            // 語の並びの i - 1 番目と i 番目 (後の文は j - 1 番目と j 番目) の間に、句読点・記号・空白がある
+            func separated(_ i: Int, _ j: Int) -> Bool {
+                hasSeparator(original[old[i - 1].range.upperBound..<old[i].range.lowerBound])
+                    || hasSeparator(corrected[new[j - 1].range.upperBound..<new[j].range.lowerBound])
+            }
+            var wide = span
+            while wide.old.lowerBound > 0, wide.new.lowerBound > 0,
+                retyped(wide.old.lowerBound - 1, wide.new.lowerBound - 1),
+                !separated(wide.old.lowerBound, wide.new.lowerBound)
+            {
+                wide = Span(
+                    old: (wide.old.lowerBound - 1)..<wide.old.upperBound,
+                    new: (wide.new.lowerBound - 1)..<wide.new.upperBound)
+            }
+            while wide.old.upperBound < old.count, wide.new.upperBound < new.count,
+                retyped(wide.old.upperBound, wide.new.upperBound),
+                !separated(wide.old.upperBound, wide.new.upperBound)
+            {
+                wide = Span(
+                    old: wide.old.lowerBound..<(wide.old.upperBound + 1),
+                    new: wide.new.lowerBound..<(wide.new.upperBound + 1))
+            }
+            return fits(wide) ? wide : span
+        }
+
+        // 1つにまとめた変更と、その元になった広げる前の変更
+        var groups: [(span: Span, parts: [Span])] = []
+        for span in spans {
+            var current = (span: widen(span), parts: [span])
+            while let last = groups.last,
+                last.span.old.overlaps(current.span.old) || last.span.new.overlaps(current.span.new)
+            {
+                groups.removeLast()
+                current = (
+                    span: Span(
+                        old: min(last.span.old.lowerBound, current.span.old.lowerBound)
+                            ..< max(last.span.old.upperBound, current.span.old.upperBound),
+                        new: min(last.span.new.lowerBound, current.span.new.lowerBound)
+                            ..< max(last.span.new.upperBound, current.span.new.upperBound)),
+                    parts: last.parts + current.parts)
+            }
+            groups.append(current)
+        }
+        return groups.flatMap { fits($0.span) ? [$0.span] : $0.parts }
     }
 
     /// ひらがな・句読点・記号・空白だけの語。助詞や「です」のように、名前の一部ではなく消しすぎた分とみなす。
@@ -165,10 +180,19 @@ enum HaasCorrectionDiff {
             case 0x30FC, 0xFF70:
                 return true
             default:
-                return CharacterSet.punctuationCharacters.contains(scalar) || CharacterSet.symbols.contains(scalar)
-                    || CharacterSet.whitespacesAndNewlines.contains(scalar)
+                return isSeparator(scalar)
             }
         }
+    }
+
+    /// 語の間に句読点・記号・空白がある。トークナイザーはこれらを語にしないので、語の表記とは別に調べる
+    private static func hasSeparator(_ gap: Substring) -> Bool {
+        gap.unicodeScalars.contains(where: isSeparator)
+    }
+
+    private static func isSeparator(_ scalar: Unicode.Scalar) -> Bool {
+        CharacterSet.punctuationCharacters.contains(scalar) || CharacterSet.symbols.contains(scalar)
+            || CharacterSet.whitespacesAndNewlines.contains(scalar)
     }
 
     private static func range(of indices: Range<Int>, in tokens: [HaasReadingToken]) -> Range<String.Index> {
@@ -230,14 +254,16 @@ enum HaasCorrectionSuggester {
             // 2a. 置き換えルールの元の語はカンマで分けて保存されるため、カンマを含む変更は捨てる。
             if containsComma(change.before) || containsComma(change.after) { continue }
             // 3. 辞書の語の表記にかかる変更は捨てる。
-            //    ただし、表記を丸ごと含み、直した後にもその表記が残る変更 (巽まさひろ → 巽雅洋) は残す。
+            //    ただし、表記を丸ごと含み、直した後にも同じ数以上残る変更 (巽まさひろ → 巽雅洋) は残す。
             let overlapping = entries.map(\.writtenForm).filter { form in
-                !form.isEmpty && ranges(of: form, in: original).contains { found in
-                    found.overlaps(change.beforeRange)
-                        && !(change.beforeRange.lowerBound <= found.lowerBound
-                            && found.upperBound <= change.beforeRange.upperBound
-                            && change.after.contains(form))
+                guard !form.isEmpty else { return false }
+                let found = ranges(of: form, in: original).filter { $0.overlaps(change.beforeRange) }
+                guard !found.isEmpty else { return false }
+                let enclosed = found.allSatisfy {
+                    change.beforeRange.lowerBound <= $0.lowerBound && $0.upperBound <= change.beforeRange.upperBound
                 }
+                return !(enclosed
+                    && ranges(of: form, in: change.before).count <= ranges(of: form, in: change.after).count)
             }
             if !overlapping.isEmpty {
                 for form in overlapping where !usedForms.contains(form) { usedForms.append(form) }

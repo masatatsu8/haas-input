@@ -250,6 +250,43 @@ final class HaasCorrectionSuggesterTests: XCTestCase {
         XCTAssertEqual(result.suggestions.map(\.writtenForm), ["巽", "書類"])
     }
 
+    func testDoesNotWidenAcrossSeparatorsBetweenWords() {
+        // トークナイザーは「。」「・」空白を語にしないので、語の間に残る。そこを越えて広げない
+        for separator in ["。", "・", " "] {
+            let original = "辰巳\(separator)東京支店"
+            let corrected = "巽\(separator)東京支社"
+            let result = HaasCorrectionSuggester.suggestions(
+                original: original, corrected: corrected, entries: [],
+                hunks: [HaasEditHunk(originalRange: 0..<original.utf16.count, currentRange: 0..<corrected.utf16.count)])
+            XCTAssertEqual(result.suggestions.map(\.before), ["辰巳", "東京支店"], separator)
+            XCTAssertEqual(result.suggestions.map(\.writtenForm), ["巽", "東京支社"], separator)
+        }
+    }
+
+    func testChangingOneOfRepeatedDictionaryFormsIsStillSkipped() {
+        // 塊の中の辞書の「巽」2つのうち1つを「辰巳」に変えた。もう1つが残っていても候補にしない
+        let original = "巽東京巽まさひろ"
+        let corrected = "辰巳東京巽雅洋"
+        let result = HaasCorrectionSuggester.suggestions(
+            original: original, corrected: corrected, entries: [entry("巽", ["たつみ"])],
+            hunks: [HaasEditHunk(originalRange: 0..<original.utf16.count, currentRange: 0..<corrected.utf16.count)])
+        XCTAssertTrue(result.suggestions.isEmpty)
+        XCTAssertEqual(result.usedDictionaryForms, ["巽"])
+    }
+
+    func testMergedChangeTooLongFallsBackToWordChanges() {
+        // 両端の変更はそれぞれ広げると20文字だが、まとめると22文字になる
+        let shared = "国立研究開発法人新エネルギー産業技術"
+        let original = "東京" + shared + "支店"
+        let corrected = "大阪" + shared + "支社"
+        XCTAssertEqual(("東京" + shared).count, HaasCorrectionSuggester.maximumCorrectedLength, "テスト前提")
+        let result = HaasCorrectionSuggester.suggestions(
+            original: original, corrected: corrected, entries: [],
+            hunks: [HaasEditHunk(originalRange: 0..<original.utf16.count, currentRange: 0..<corrected.utf16.count)])
+        XCTAssertEqual(result.suggestions.map(\.before), ["東京", "支店"])
+        XCTAssertEqual(result.suggestions.map(\.writtenForm), ["大阪", "支社"])
+    }
+
     func testWordsThatStopWidening() {
         for surface in ["です", "は", "すごーい", "。", "、", "・", "「", "ー", "　", "ゝ"] {
             XCTAssertTrue(HaasCorrectionDiff.stopsWidening(surface), surface)

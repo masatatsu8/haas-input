@@ -112,9 +112,14 @@ final class HaasCorrectionPanelModel: ObservableObject {
         suggestions[index].reading = reading
     }
 
-    /// 欄の range が replacement に置き換わる直前に、欄から呼ぶ
-    func recordEdit(range: NSRange, replacement: String) {
-        edits.apply(range: range, replacement: replacement)
+    /// 欄の range が replacement に置き換わる直前に、欄から呼ぶ。
+    /// 取り消し・やり直しで戻った文字は元の文の位置に結びつけられないので、それまでの記録ごと使わない
+    func recordEdit(range: NSRange, replacement: String, isUndoOrRedo: Bool) {
+        if isUndoOrRedo {
+            edits.invalidate()
+        } else {
+            edits.apply(range: range, replacement: replacement)
+        }
     }
 
     /// 欄の文を外から書き換えたとき。それまでの記録は欄の中身と結びつかない
@@ -154,8 +159,8 @@ final class HaasCorrectionPanelModel: ObservableObject {
 /// 直す文を入れる欄。NSTextView なので日本語入力の変換が使える
 private struct HaasCorrectionTextEditor: NSViewRepresentable {
     @Binding var text: String
-    /// 欄の文字が置き換わる直前。変換中の文字の置き換えも含む
-    let willReplace: (NSRange, String) -> Void
+    /// 欄の文字が置き換わる直前。変換中の文字の置き換えも含む。3つ目は取り消し・やり直しのとき true
+    let willReplace: (NSRange, String, Bool) -> Void
     /// 欄の文を外から書き換えた後
     let didResetText: () -> Void
 
@@ -195,10 +200,13 @@ private struct HaasCorrectionTextEditor: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
-        let willReplace: (NSRange, String) -> Void
+        let willReplace: (NSRange, String, Bool) -> Void
         let didResetText: () -> Void
 
-        init(text: Binding<String>, willReplace: @escaping (NSRange, String) -> Void, didResetText: @escaping () -> Void) {
+        init(
+            text: Binding<String>, willReplace: @escaping (NSRange, String, Bool) -> Void,
+            didResetText: @escaping () -> Void
+        ) {
             self.text = text
             self.willReplace = willReplace
             self.didResetText = didResetText
@@ -208,7 +216,12 @@ private struct HaasCorrectionTextEditor: NSViewRepresentable {
             _ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?
         ) -> Bool {
             // nil は文字を変えない (属性だけの) 変更
-            if let replacementString { willReplace(affectedCharRange, replacementString) }
+            if let replacementString {
+                let undoManager = textView.undoManager
+                willReplace(
+                    affectedCharRange, replacementString,
+                    undoManager?.isUndoing == true || undoManager?.isRedoing == true)
+            }
             return true
         }
 
@@ -228,7 +241,7 @@ private struct HaasCorrectionPanelView: View {
         VStack(alignment: .leading, spacing: 12) {
             HaasCorrectionTextEditor(
                 text: $model.corrected,
-                willReplace: { [model] in model.recordEdit(range: $0, replacement: $1) },
+                willReplace: { [model] in model.recordEdit(range: $0, replacement: $1, isUndoOrRedo: $2) },
                 didResetText: { [model] in model.discardEdits() }
             )
             .frame(minHeight: 110)

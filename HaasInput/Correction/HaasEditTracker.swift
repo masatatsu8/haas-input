@@ -41,7 +41,7 @@ struct HaasEditTracker {
 
     /// 欄の中身が記録と食い違ったら (取りこぼし)、記録を無効にする
     mutating func check(_ current: String) {
-        if text != current { invalidate() }
+        if !matches(current) { invalidate() }
     }
 
     mutating func invalidate() {
@@ -51,7 +51,7 @@ struct HaasEditTracker {
     /// 残った元の文字の間ごとに、消えた元の範囲と入れた文字の範囲を組にする。両方が空でない組だけを返す。
     /// 記録が無効か、current が記録と違えば空
     func hunks(in current: String) -> [HaasEditHunk] {
-        guard let sources, text == current else { return [] }
+        guard let sources, matches(current) else { return [] }
         var hunks: [HaasEditHunk] = []
         // 文の始まりと終わりも、残った文字とみなして区切る
         var originalStart = 0
@@ -69,5 +69,10 @@ struct HaasEditTracker {
         }
         flush(originalEnd: originalLength, currentEnd: sources.count)
         return hunks
+    }
+
+    /// 位置は UTF-16 単位なので、String の == (正規化で等しければ同じ) ではなく UTF-16 の並びで比べる
+    private func matches(_ current: String) -> Bool {
+        text.utf16.elementsEqual(current.utf16)
     }
 }
