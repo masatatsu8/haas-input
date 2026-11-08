@@ -139,11 +139,12 @@ final class HaasCorrectionCoordinator: ObservableObject {
         _ = returnTarget?.activate()
     }
 
-    func suggestions(for corrected: String) -> HaasSuggestionResult {
+    func suggestions(for corrected: String, hunks: [HaasEditHunk] = []) -> HaasSuggestionResult {
         guard let draft = session?.draft, let entries = try? settings.vocabularyEntriesSnapshot() else {
             return HaasSuggestionResult(suggestions: [], usedDictionaryForms: [])
         }
-        return HaasCorrectionSuggester.suggestions(original: draft.originalText, corrected: corrected, entries: entries)
+        return HaasCorrectionSuggester.suggestions(
+            original: draft.originalText, corrected: corrected, entries: entries, hunks: hunks)
     }
 
     func confirm(

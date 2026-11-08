@@ -12,7 +12,7 @@ final class HaasCorrectionPanelModelTests: XCTestCase {
     }
 
     func testPrimaryButtonTitleFollowsDecision() {
-        let none = { (_: String) in HaasSuggestionResult(suggestions: [], usedDictionaryForms: []) }
+        let none = { (_: String, _: [HaasEditHunk]) in HaasSuggestionResult(suggestions: [], usedDictionaryForms: []) }
         XCTAssertEqual(
             HaasCorrectionPanelModel(draft: draft(.replaceAutomatically(deleteCount: 3)), suggest: none)
                 .primaryButtonTitle, "直して入力")
@@ -27,7 +27,7 @@ final class HaasCorrectionPanelModelTests: XCTestCase {
     }
 
     func testCannotConfirmWhenBlank() {
-        let none = { (_: String) in HaasSuggestionResult(suggestions: [], usedDictionaryForms: []) }
+        let none = { (_: String, _: [HaasEditHunk]) in HaasSuggestionResult(suggestions: [], usedDictionaryForms: []) }
         let model = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord)), suggest: none)
         XCTAssertTrue(model.canConfirm)
         model.corrected = " \n　"
@@ -41,7 +41,7 @@ final class HaasCorrectionPanelModelTests: XCTestCase {
             "A": [suggestion(0, before: "a", written: "A"), suggestion(1, before: "b", written: "B")],
             "B": [suggestion(0, before: "b", written: "B"), suggestion(1, before: "c", written: "C")],
         ]
-        let model = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord))) { corrected in
+        let model = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord))) { corrected, _ in
             HaasSuggestionResult(suggestions: shown[corrected] ?? [], usedDictionaryForms: [])
         }
         model.corrected = "A"
@@ -59,7 +59,7 @@ final class HaasCorrectionPanelModelTests: XCTestCase {
     }
 
     func testReadingEditSurvivesRebuildOfSameSuggestion() {
-        let model = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord))) { _ in
+        let model = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord))) { _, _ in
             HaasSuggestionResult(
                 suggestions: [
                     HaasDictionarySuggestion(id: 0, kind: .newWord, before: "a", writtenForm: "A", reading: "えー")
@@ -73,15 +73,52 @@ final class HaasCorrectionPanelModelTests: XCTestCase {
     }
 
     func testNoticeMentionsUsedDictionaryForms() {
-        let model = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord))) { _ in
+        let model = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord))) { _, _ in
             HaasSuggestionResult(suggestions: [], usedDictionaryForms: ["辰巳商事"])
         }
         model.corrected = "辰巳商事です。"
         XCTAssertEqual(model.notice, "辞書の『辰巳商事』が使われています。辞書の画面で見直せます")
-        let plain = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord))) { _ in
+        let plain = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord))) { _, _ in
             HaasSuggestionResult(suggestions: [], usedDictionaryForms: [])
         }
         XCTAssertNil(plain.notice)
+    }
+
+    func testEditsFromFieldReachSuggest() {
+        var received: [[HaasEditHunk]] = []
+        let model = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord), text: "私の名前は巽まさひろです。")) {
+            _, hunks in
+            received.append(hunks)
+            return HaasSuggestionResult(suggestions: [], usedDictionaryForms: [])
+        }
+        model.recordEdit(range: NSRange(location: 5, length: 5), replacement: "巽雅洋")
+        model.corrected = "私の名前は巽雅洋です。"
+        XCTAssertEqual(received.last, [HaasEditHunk(originalRange: 5..<10, currentRange: 5..<8)])
+    }
+
+    func testTextChangedOutsideFieldDropsEdits() {
+        var received: [[HaasEditHunk]] = []
+        let model = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord), text: "私の名前は巽まさひろです。")) {
+            _, hunks in
+            received.append(hunks)
+            return HaasSuggestionResult(suggestions: [], usedDictionaryForms: [])
+        }
+        // 欄を通らない書き換えが1度でもあれば、元の文に戻しても塊を渡さない
+        model.corrected = "私の名前は巽まさひろでした。"
+        model.corrected = "私の名前は巽まさひろです。"
+        model.recordEdit(range: NSRange(location: 5, length: 5), replacement: "巽雅洋")
+        model.corrected = "私の名前は巽雅洋です。"
+        XCTAssertEqual(received.last, [])
+
+        let reset = HaasCorrectionPanelModel(draft: draft(.copyOnly(.noRecord), text: "私の名前は巽まさひろです。")) {
+            _, hunks in
+            received.append(hunks)
+            return HaasSuggestionResult(suggestions: [], usedDictionaryForms: [])
+        }
+        reset.recordEdit(range: NSRange(location: 5, length: 5), replacement: "巽雅洋")
+        reset.discardEdits()
+        reset.corrected = "私の名前は巽雅洋です。"
+        XCTAssertEqual(received.last, [])
     }
 
     func testSuggestionTitleShowsBeforeTextForReplacementRules() {

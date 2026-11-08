@@ -15,12 +15,36 @@ enum HaasCorrectionDiff {
     /// 超えるときは違いを探さない (辞書の候補を出さないだけで、訂正は続ける)
     static let maximumTableCells = 40_000
 
-    static func changes(from original: String, to corrected: String) -> [HaasTextChange] {
+    /// 違う1か所の、前後の文の語の並びの中の位置
+    private struct Span {
+        var old: Range<Int>
+        var new: Range<Int>
+    }
+
+    /// - hunks: 訂正の窓の欄で手で直した塊。重なる変更を、塊の中で打ち直した前後の共通の語まで広げる
+    static func changes(from original: String, to corrected: String, hunks: [HaasEditHunk] = []) -> [HaasTextChange] {
         // 同じ文なら語に分けるまでもない
         guard original != corrected else { return [] }
         let old = HaasJapaneseReading.tokens(in: original)
         let new = HaasJapaneseReading.tokens(in: corrected)
+        var spans = wordSpans(old: old, new: new)
+        if !hunks.isEmpty, !spans.isEmpty {
+            spans = widened(spans, by: hunks, original: original, corrected: corrected, old: old, new: new)
+        }
+        return spans.map { span in
+            let oldTokens = old[span.old]
+            let beforeRange = range(of: span.old, in: old)
+            return HaasTextChange(
+                before: String(original[beforeRange]),
+                after: String(corrected[range(of: span.new, in: new)]),
+                beforeReading: oldTokens.map(\.reading).joined(),
+                beforeHasReading: oldTokens.allSatisfy { $0.isJapanese && $0.hasReading },
+                beforeRange: beforeRange
+            )
+        }
+    }
 
+    private static func wordSpans(old: [HaasReadingToken], new: [HaasReadingToken]) -> [Span] {
         // 前後の共通の語を除き、残りの部分だけで表を作る
         var prefix = 0
         while prefix < old.count, prefix < new.count, old[prefix].surface == new[prefix].surface { prefix += 1 }
@@ -46,7 +70,7 @@ enum HaasCorrectionDiff {
             }
         }
 
-        var changes: [HaasTextChange] = []
+        var spans: [Span] = []
         var i = prefix
         var j = prefix
         var oldStart = prefix
@@ -54,17 +78,7 @@ enum HaasCorrectionDiff {
         func flush(oldEnd: Int, newEnd: Int) {
             // 片側にしかない組 (追加だけ・削除だけ) は返さない。
             guard oldEnd > oldStart, newEnd > newStart else { return }
-            let oldTokens = old[oldStart..<oldEnd]
-            let newTokens = new[newStart..<newEnd]
-            let beforeRange = oldTokens.first!.range.lowerBound..<oldTokens.last!.range.upperBound
-            let afterRange = newTokens.first!.range.lowerBound..<newTokens.last!.range.upperBound
-            changes.append(HaasTextChange(
-                before: String(original[beforeRange]),
-                after: String(corrected[afterRange]),
-                beforeReading: oldTokens.map(\.reading).joined(),
-                beforeHasReading: oldTokens.allSatisfy { $0.isJapanese && $0.hasReading },
-                beforeRange: beforeRange
-            ))
+            spans.append(Span(old: oldStart..<oldEnd, new: newStart..<newEnd))
         }
         while i < oldEnd || j < newEnd {
             if i < oldEnd, j < newEnd, old[i].surface == new[j].surface {
@@ -81,7 +95,95 @@ enum HaasCorrectionDiff {
         }
         // 後ろの共通の語の手前で区切る
         flush(oldEnd: i, newEnd: j)
-        return changes
+        return spans
+    }
+
+    /// 手で直した塊に重なる変更を、外側へ向かって、同じ塊の中で消して打ち直した共通の語が続く間だけ広げる。
+    /// 広げるのを止める語 (stopsWidening) に当たったら、その語から先は含めない。
+    /// 広げた後が長すぎる変更は広げない。広げて重なった変更は1つにまとめる
+    private static func widened(
+        _ spans: [Span], by hunks: [HaasEditHunk], original: String, corrected: String,
+        old: [HaasReadingToken], new: [HaasReadingToken]
+    ) -> [Span] {
+        let edited = hunks.compactMap { hunk -> (original: Range<String.Index>, current: Range<String.Index>)? in
+            guard let originalRange = characterRange(hunk.originalRange, in: original),
+                let currentRange = characterRange(hunk.currentRange, in: corrected)
+            else { return nil }
+            return (originalRange, currentRange)
+        }
+        let limit = HaasCorrectionSuggester.maximumCorrectedLength
+        var result: [Span] = []
+        for span in spans {
+            var current = span
+            let beforeRange = range(of: span.old, in: old)
+            let overlapping = edited.filter { $0.original.overlaps(beforeRange) }
+            if !overlapping.isEmpty {
+                func retyped(_ i: Int, _ j: Int) -> Bool {
+                    old[i].surface == new[j].surface && !stopsWidening(old[i].surface)
+                        && overlapping.contains { encloses($0.original, old[i].range) && encloses($0.current, new[j].range) }
+                }
+                var wide = span
+                while wide.old.lowerBound > 0, wide.new.lowerBound > 0,
+                    retyped(wide.old.lowerBound - 1, wide.new.lowerBound - 1)
+                {
+                    wide = Span(
+                        old: (wide.old.lowerBound - 1)..<wide.old.upperBound,
+                        new: (wide.new.lowerBound - 1)..<wide.new.upperBound)
+                }
+                while wide.old.upperBound < old.count, wide.new.upperBound < new.count,
+                    retyped(wide.old.upperBound, wide.new.upperBound)
+                {
+                    wide = Span(
+                        old: wide.old.lowerBound..<(wide.old.upperBound + 1),
+                        new: wide.new.lowerBound..<(wide.new.upperBound + 1))
+                }
+                if original[range(of: wide.old, in: old)].count <= limit,
+                    corrected[range(of: wide.new, in: new)].count <= limit
+                {
+                    current = wide
+                }
+            }
+            while let last = result.last, last.old.overlaps(current.old) || last.new.overlaps(current.new) {
+                result.removeLast()
+                current = Span(
+                    old: min(last.old.lowerBound, current.old.lowerBound)..<max(last.old.upperBound, current.old.upperBound),
+                    new: min(last.new.lowerBound, current.new.lowerBound)..<max(last.new.upperBound, current.new.upperBound))
+            }
+            result.append(current)
+        }
+        return result
+    }
+
+    /// ひらがな・句読点・記号・空白だけの語。助詞や「です」のように、名前の一部ではなく消しすぎた分とみなす。
+    /// 漢字・カタカナ・英数字を1文字でも含む語は false
+    static func stopsWidening(_ surface: String) -> Bool {
+        surface.unicodeScalars.allSatisfy { scalar in
+            switch scalar.value {
+            case 0x3041...0x3096, 0x309D...0x309F: // ひらがな (ゝゞ を含む)
+                return true
+            // 長音符はひらがなの語にも付く (すごーい) ので、それだけではカタカナの語とみなさない
+            case 0x30FC, 0xFF70:
+                return true
+            default:
+                return CharacterSet.punctuationCharacters.contains(scalar) || CharacterSet.symbols.contains(scalar)
+                    || CharacterSet.whitespacesAndNewlines.contains(scalar)
+            }
+        }
+    }
+
+    private static func range(of indices: Range<Int>, in tokens: [HaasReadingToken]) -> Range<String.Index> {
+        tokens[indices.lowerBound].range.lowerBound..<tokens[indices.upperBound - 1].range.upperBound
+    }
+
+    private static func encloses(_ outer: Range<String.Index>, _ inner: Range<String.Index>) -> Bool {
+        outer.lowerBound <= inner.lowerBound && inner.upperBound <= outer.upperBound
+    }
+
+    /// UTF-16 の位置の範囲を、文字の境目まで外側に広げた text の範囲にする。text に収まらなければ nil
+    private static func characterRange(_ range: Range<Int>, in text: String) -> Range<String.Index>? {
+        let utf16 = text as NSString
+        guard range.lowerBound >= 0, range.upperBound <= utf16.length else { return nil }
+        return Range(utf16.rangeOfComposedCharacterSequences(for: NSRange(range)), in: text)
     }
 }
 
@@ -113,22 +215,29 @@ enum HaasCorrectionSuggester {
 
     private static let ignoredCharacters: Set<Character> = ["、", "。", "？", "?"]
 
+    /// - hunks: 訂正の窓の欄で手で直した塊 (HaasEditTracker)。語の差分の変更を、消した範囲まで広げる
     static func suggestions(
-        original: String, corrected: String, entries: [HaasVocabularyEntry]
+        original: String, corrected: String, entries: [HaasVocabularyEntry], hunks: [HaasEditHunk] = []
     ) -> HaasSuggestionResult {
         var suggestions: [HaasDictionarySuggestion] = []
         var usedForms: [String] = []
 
-        for change in HaasCorrectionDiff.changes(from: original, to: corrected) {
+        for change in HaasCorrectionDiff.changes(from: original, to: corrected, hunks: hunks) {
             // 1. 句読点と空白を除くと同じ変更は捨てる。
             if stripped(change.before) == stripped(change.after) { continue }
             // 2. 直した後が長すぎる変更は書き直しとみなして捨てる。
             if change.after.count > maximumCorrectedLength { continue }
             // 2a. 置き換えルールの元の語はカンマで分けて保存されるため、カンマを含む変更は捨てる。
             if containsComma(change.before) || containsComma(change.after) { continue }
-            // 3. 辞書の語の表記の内側の変更は捨てる。
+            // 3. 辞書の語の表記にかかる変更は捨てる。
+            //    ただし、表記を丸ごと含み、直した後にもその表記が残る変更 (巽まさひろ → 巽雅洋) は残す。
             let overlapping = entries.map(\.writtenForm).filter { form in
-                !form.isEmpty && ranges(of: form, in: original).contains { $0.overlaps(change.beforeRange) }
+                !form.isEmpty && ranges(of: form, in: original).contains { found in
+                    found.overlaps(change.beforeRange)
+                        && !(change.beforeRange.lowerBound <= found.lowerBound
+                            && found.upperBound <= change.beforeRange.upperBound
+                            && change.after.contains(form))
+                }
             }
             if !overlapping.isEmpty {
                 for form in overlapping where !usedForms.contains(form) { usedForms.append(form) }
