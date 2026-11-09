@@ -8,6 +8,7 @@ struct HaasWordReplacementView: View {
     @State private var editor: EditorRequest?
     @State private var ruleToDelete: WordReplacement?
     @State private var errorMessage: String?
+    @AppStorage(HaasTextScaleSettingsKeys.mainWindow) private var textScale = HaasTextScale.standard
 
     private struct EditorRequest: Identifiable {
         let id = UUID()
@@ -24,17 +25,17 @@ struct HaasWordReplacementView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("置換ルール").font(.headline)
+                Text("置換ルール").haasFont(.headline)
                 Spacer()
                 Button("追加", systemImage: "plus") { editor = EditorRequest(rule: nil) }
                     .buttonStyle(.borderedProminent)
             }
             Text("認識が確定した文章に適用します。複数の元の語は半角カンマで区切れます。変更は次の録音から反映されます。")
-                .font(.caption).foregroundStyle(.secondary)
+                .haasFont(.caption).foregroundStyle(.secondary)
             TextField("元の語・置換先を検索", text: $searchText)
                 .textFieldStyle(.roundedBorder)
             Text("表示 \(visibleRules.count) / 全 \(rules.count) 件")
-                .font(.caption).foregroundStyle(.secondary)
+                .haasFont(.caption).foregroundStyle(.secondary)
             Table(visibleRules) {
                 TableColumn("元の語") { rule in
                     Text(verbatim: rule.originalText).lineLimit(1).help(rule.originalText)
@@ -53,7 +54,7 @@ struct HaasWordReplacementView: View {
                     }
                     .buttonStyle(.borderless)
                 }
-                .width(80)
+                .width(80 * textScale.factor)
             }
             .overlay {
                 if visibleRules.isEmpty {
@@ -64,6 +65,7 @@ struct HaasWordReplacementView: View {
         }
         .sheet(item: $editor) { request in
             HaasWordReplacementEditor(rule: request.rule)
+                .haasTextScaleRoot(textScale)
         }
         .alert("置換ルールを削除しますか？", isPresented: Binding(
             get: { ruleToDelete != nil }, set: { if !$0 { ruleToDelete = nil } }
@@ -93,6 +95,7 @@ private struct HaasWordReplacementEditor: View {
     @State private var original: String
     @State private var replacement: String
     @State private var errorMessage: String?
+    @Environment(\.haasTextScale) private var textScale
 
     init(rule: WordReplacement?) {
         self.rule = rule
@@ -102,7 +105,7 @@ private struct HaasWordReplacementEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(rule == nil ? "置換ルールを追加" : "置換ルールを編集").font(.headline)
+            Text(rule == nil ? "置換ルールを追加" : "置換ルールを編集").haasFont(.headline)
             Text("元の語")
             TextField("例: 音声にゅうりょく, 音声入浴", text: $original)
                 .textFieldStyle(.roundedBorder)
@@ -110,8 +113,8 @@ private struct HaasWordReplacementEditor: View {
             TextField("例: 音声入力", text: $replacement)
                 .textFieldStyle(.roundedBorder)
             Text("同じ元の語を別の置換先へ登録することや、元へ戻る循環したルールはできません。")
-                .font(.caption).foregroundStyle(.secondary)
-            if let errorMessage { Text(errorMessage).foregroundStyle(.red).font(.callout) }
+                .haasFont(.caption).foregroundStyle(.secondary)
+            if let errorMessage { Text(errorMessage).foregroundStyle(.red).haasFont(.callout) }
             HStack {
                 Spacer()
                 Button("キャンセル", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
@@ -120,7 +123,7 @@ private struct HaasWordReplacementEditor: View {
                     .disabled(WordReplacementVariants.parse(original).isEmpty || replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding(24).frame(width: 480)
+        .padding(24).frame(width: 480 * textScale)
     }
 
     private func save() {

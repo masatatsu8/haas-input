@@ -46,6 +46,44 @@ final class HaasInputDeliveryTests: XCTestCase {
         XCTAssertEqual(afterFailure.watchToken, firstToken)
     }
 
+    func testLastDeliveredInputRecordsWhenInputFinished() async throws {
+        let fixture = try DeliveryFixture()
+        defer { fixture.cleanUp() }
+        let start = fixture.clock.now
+
+        // 区切りを貼り終えた時刻。finish の前に止めた録音でも残る
+        let stopped = UUID()
+        try await fixture.delivery.begin(sessionID: stopped, target: AvailableInputTarget())
+        fixture.clock.now = start.addingTimeInterval(5)
+        fixture.delivery.accept(sessionID: stopped, itemID: "item-1", text: "前半、")
+        await waitUntil { fixture.delivery.ledger.segments.first?.disposition == .posted }
+        fixture.clock.now = start.addingTimeInterval(9)
+        fixture.delivery.cancel(sessionID: stopped, message: nil)
+        XCTAssertEqual(fixture.delivery.lastDeliveredInput?.deliveredAt, start.addingTimeInterval(5))
+
+        // finish で貼り付けの完了を待った後の時刻
+        let finished = UUID()
+        fixture.clock.now = start.addingTimeInterval(20)
+        try await fixture.delivery.begin(sessionID: finished, target: AvailableInputTarget())
+        fixture.clock.now = start.addingTimeInterval(25)
+        fixture.delivery.accept(sessionID: finished, itemID: "item-1", text: "後半。")
+        await waitUntil { fixture.delivery.ledger.segments.first?.disposition == .posted }
+        fixture.clock.now = start.addingTimeInterval(30)
+        await fixture.delivery.finish(sessionID: finished)
+        XCTAssertEqual(fixture.delivery.lastDeliveredInput?.deliveredAt, start.addingTimeInterval(30))
+
+        // 貼らずに止めた録音は、録音を始めた時刻
+        let held = UUID()
+        fixture.clock.now = start.addingTimeInterval(40)
+        try await fixture.delivery.begin(sessionID: held, target: nil)
+        fixture.delivery.accept(sessionID: held, itemID: "item-1", text: "保留した文")
+        fixture.clock.now = start.addingTimeInterval(45)
+        fixture.delivery.cancel(sessionID: held, message: nil)
+        let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
+        XCTAssertEqual(input.sessionID, held)
+        XCTAssertEqual(input.deliveredAt, start.addingTimeInterval(40))
+    }
+
     func testRecordsFieldOnlyBeforeFirstPaste() async throws {
         let fixture = try DeliveryFixture()
         defer { fixture.cleanUp() }
@@ -104,7 +142,7 @@ final class HaasInputDeliveryTests: XCTestCase {
             delivery: fixture.delivery, monitor: fixture.monitor, replacer: HaasSystemCorrectionReplacer(),
             settings: HaasSettingsStore(defaults: fixture.defaults), modelContext: container.mainContext,
             isIdle: { true }, captureReturnTarget: { nil }, waitForFocus: { _ in })
-        let draft = try XCTUnwrap(coordinator.begin())
+        let draft = try XCTUnwrap(coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
     }
 
@@ -134,7 +172,7 @@ final class HaasInputDeliveryTests: XCTestCase {
             delivery: fixture.delivery, monitor: fixture.monitor, replacer: replacer,
             settings: HaasSettingsStore(defaults: fixture.defaults), modelContext: container.mainContext,
             isIdle: { true }, captureReturnTarget: { nil }, waitForFocus: { _ in })
-        let draft = try XCTUnwrap(coordinator.begin())
+        let draft = try XCTUnwrap(coordinator.begin().draft)
         // カーソルの前だけなら「前」+「はい」と一致するが、後ろが記録と違うので消さない
         XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
 
@@ -179,12 +217,17 @@ final class HaasInputDeliveryTests: XCTestCase {
         first.rejection = "focus_changed"
         fixture.delivery.accept(sessionID: session, itemID: "item-2", text: "後半。")
         await waitUntil { fixture.delivery.isPaused && fixture.delivery.pendingText == "後半。" }
+        let finishedAt = fixture.clock.now.addingTimeInterval(10)
+        fixture.clock.now = finishedAt
         await fixture.delivery.finish(sessionID: session)
         XCTAssertTrue(fixture.monitor.isClean(for: token), "保留しただけでは見張りは崩れない")
+        XCTAssertEqual(fixture.delivery.lastDeliveredInput?.deliveredAt, finishedAt)
 
         // 「3秒後に選択した欄で再開」で、新しい欄 (中身を読めない) に残りを入れる
         let second = SwitchableInputTarget(identifier: "test.second")
         fixture.capturedTarget.target = second
+        let resumedAt = finishedAt.addingTimeInterval(60)
+        fixture.clock.now = resumedAt
         fixture.delivery.scheduleResume()
         await waitUntil(timeout: .seconds(5)) {
             fixture.paster.calls.count == 2 && fixture.delivery.pendingText.isEmpty
@@ -195,6 +238,8 @@ final class HaasInputDeliveryTests: XCTestCase {
         let input = try XCTUnwrap(fixture.delivery.lastDeliveredInput)
         XCTAssertEqual(input.text, "前半、後半。")
         XCTAssertEqual(input.target?.diagnosticAppIdentifier, "test.second")
+        // finish の後に残りを貼り終えたので、その時刻が入力し終えた時刻になる
+        XCTAssertEqual(input.deliveredAt, resumedAt)
         // 新しい欄には後半しか入っていないので、全文を消させない
         XCTAssertFalse(input.allSegmentsPosted)
         XCTAssertEqual(fixture.monitor.invalidateCount, 1)
@@ -209,7 +254,7 @@ final class HaasInputDeliveryTests: XCTestCase {
             delivery: fixture.delivery, monitor: fixture.monitor, replacer: HaasSystemCorrectionReplacer(),
             settings: HaasSettingsStore(defaults: fixture.defaults), modelContext: container.mainContext,
             isIdle: { true }, captureReturnTarget: { nil }, waitForFocus: { _ in })
-        let draft = try XCTUnwrap(coordinator.begin())
+        let draft = try XCTUnwrap(coordinator.begin().draft)
         XCTAssertEqual(draft.originalText, "前半、後半。")
         XCTAssertEqual(draft.decision, .copyOnly(.notAllPosted))
     }
@@ -618,6 +663,8 @@ final class DeliveryFixture {
     let monitor = FakeInputWatcher()
     /// 再開のときに取る入力先
     let capturedTarget = CapturedTargetBox()
+    /// 配信が記録する時刻
+    let clock = DeliveryClock()
     let delivery: HaasInputDelivery
 
     init() throws {
@@ -627,7 +674,8 @@ final class DeliveryFixture {
         defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         delivery = HaasInputDelivery(
             store: HaasRecoveryStore(fileURL: fileURL, legacyDefaults: defaults), textPaster: paster,
-            inputMonitor: monitor, captureTarget: { [capturedTarget] in capturedTarget.target }
+            inputMonitor: monitor, captureTarget: { [capturedTarget] in capturedTarget.target },
+            now: { [clock] in clock.now }
         )
     }
 
@@ -703,6 +751,11 @@ private final class SwitchableInputTarget: HaasInputTargetChecking {
 @MainActor
 final class CapturedTargetBox {
     var target: (any HaasInputTargetChecking)?
+}
+
+@MainActor
+final class DeliveryClock {
+    var now = Date()
 }
 
 @MainActor

@@ -12,6 +12,7 @@ struct HaasVocabularyTable: View {
 
     @State private var searchText = ""
     @State private var category: HaasVocabularyCategory?
+    @Environment(\.haasTextScale) private var textScale
 
     private var filteredEntries: [HaasVocabularyEntry] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -25,7 +26,7 @@ struct HaasVocabularyTable: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Text("Haas辞書").font(.headline)
+                Text("Haas辞書").haasFont(.headline)
                 Spacer()
                 Menu {
                     Button("共有ファイルを読み込む…", action: onImport)
@@ -47,12 +48,12 @@ struct HaasVocabularyTable: View {
             .controlSize(.small)
 
             Text("読み・別表記で認識を助け、対応する結果を正式表記へそろえます。変更は次の録音から反映されます。")
-                .font(.caption)
+                .haasFont(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
                 HStack(spacing: 6) {
-                    Text("検索").font(.callout)
+                    Text("検索").haasFont(.callout)
                     TextField("名称・読み・別表記", text: $searchText)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel("正式表記・読み・別表記を検索")
@@ -65,7 +66,7 @@ struct HaasVocabularyTable: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(width: 190)
+                .frame(width: 190 * textScale)
                 .accessibilityIdentifier("haasVocabularyCategoryFilter")
             }
             .controlSize(.small)
@@ -82,7 +83,7 @@ struct HaasVocabularyTable: View {
                     Text(transferMessage).lineLimit(1).help(transferMessage)
                 }
             }
-            .font(.caption)
+            .haasFont(.caption)
             .foregroundStyle(.secondary)
 
             Table(filteredEntries) {
@@ -91,7 +92,7 @@ struct HaasVocabularyTable: View {
                         .lineLimit(1)
                         .help(entry.writtenForm)
                 }
-                .width(min: 120, ideal: 150)
+                .width(min: 120 * textScale, ideal: 150 * textScale)
 
                 TableColumn("読み・別表記") { entry in
                     let readings = entry.readings.joined(separator: " / ")
@@ -100,7 +101,7 @@ struct HaasVocabularyTable: View {
                         .lineLimit(1)
                         .help(readings.isEmpty ? "正式表記のまま認識する項目です。" : readings)
                 }
-                .width(min: 130, ideal: 160)
+                .width(min: 130 * textScale, ideal: 160 * textScale)
 
                 TableColumn("種類") { entry in
                     Text(entry.category.displayName)
@@ -108,7 +109,7 @@ struct HaasVocabularyTable: View {
                         .lineLimit(1)
                         .help(entry.category.displayName)
                 }
-                .width(min: 110, ideal: 110)
+                .width(min: 110 * textScale, ideal: 110 * textScale)
 
                 TableColumn("操作") { entry in
                     HStack(spacing: 8) {
@@ -123,23 +124,23 @@ struct HaasVocabularyTable: View {
                     .buttonStyle(.borderless)
                     .controlSize(.small)
                 }
-                .width(70)
+                .width(70 * textScale)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: true))
-            .font(.system(size: 13))
+            .haasFont(size: 13)
             .frame(minHeight: 160, maxHeight: .infinity)
             .disabled(loadError != nil)
             .overlay {
                 if let loadError {
                     Label(loadError, systemImage: "exclamationmark.triangle")
-                        .font(.callout)
+                        .haasFont(.callout)
                         .foregroundStyle(Color.red)
                         .padding(24)
                 } else if entries.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "character.book.closed").foregroundStyle(.secondary)
                         Text("辞書はまだ空です。辞書なしでも Haas を使えます。")
-                            .font(.callout)
+                            .haasFont(.callout)
                             .foregroundStyle(.secondary)
                         Button("最初の項目を追加", action: onAdd)
                     }
@@ -147,7 +148,7 @@ struct HaasVocabularyTable: View {
                 } else if filteredEntries.isEmpty {
                     VStack(spacing: 8) {
                         Text("検索条件に一致する項目はありません。")
-                            .font(.callout)
+                            .haasFont(.callout)
                             .foregroundStyle(.secondary)
                         Button("検索条件を解除") {
                             searchText = ""

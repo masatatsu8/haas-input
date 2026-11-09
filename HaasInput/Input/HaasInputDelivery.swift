@@ -209,6 +209,8 @@ struct HaasDeliveredInput {
     let watchToken: UUID?
     /// この録音の最初の区切りを貼る直前の欄の状態。記録がなければ nil
     let insertionBaseline: HaasInsertionBaseline?
+    /// 入力し終えた時刻。記録がなければ録音を始めた時刻、それもなければ直せる時間を過ぎたものとして .distantPast
+    let deliveredAt: Date
 }
 
 @MainActor
@@ -237,7 +239,10 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
     private var retargetedSessionID: UUID?
     /// 録音の最初の区切りを貼る直前に読んだ欄の状態と、その録音
     private var insertionBaseline: (sessionID: UUID, baseline: HaasInsertionBaseline)?
+    /// 録音の入力を終えた時刻と、その録音。区切りを貼り終えたときと、finish で貼り付けの完了を待った後に記録し直す
+    private var deliveredAt: (sessionID: UUID, date: Date)?
     private let captureTarget: @MainActor () -> (any HaasInputTargetChecking)?
+    private let now: () -> Date
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "HaasInputDelivery")
     private var loadFailure: Error?
     private var persistenceFailure: Error?
@@ -266,12 +271,14 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
             return nil
         }
         let segments = record.ledger.segments
+        let finishedAt = deliveredAt.flatMap { $0.sessionID == record.id ? $0.date : nil }
         return HaasDeliveredInput(
             sessionID: record.id, transcriptionID: record.transcriptionID, text: record.ledger.fullText,
             allSegmentsPosted: !segments.isEmpty && segments.allSatisfy { $0.disposition == .posted }
                 && retargetedSessionID != record.id,
             target: target, watchToken: watchSessionID == record.id ? watchToken : nil,
-            insertionBaseline: insertionBaseline?.sessionID == record.id ? insertionBaseline?.baseline : nil)
+            insertionBaseline: insertionBaseline?.sessionID == record.id ? insertionBaseline?.baseline : nil,
+            deliveredAt: finishedAt ?? record.createdAt ?? .distantPast)
     }
 
     private var nextReadySegment: HaasSegmentLedger.Segment? {
@@ -282,12 +289,14 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
     init(
         store: HaasRecoveryStore, textPaster: any HaasTextPasting,
         inputMonitor: any HaasInputWatching = HaasUserInputMonitor.shared,
-        captureTarget: @escaping @MainActor () -> (any HaasInputTargetChecking)? = { HaasPasteTarget.capture() }
+        captureTarget: @escaping @MainActor () -> (any HaasInputTargetChecking)? = { HaasPasteTarget.capture() },
+        now: @escaping () -> Date = Date.init
     ) {
         self.store = store
         self.textPaster = textPaster
         self.inputMonitor = inputMonitor
         self.captureTarget = captureTarget
+        self.now = now
         do {
             let loaded = try store.load()
             state = loaded
@@ -327,7 +336,7 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
         var candidate = state
         Self.archiveActive(in: &candidate)
         candidate.active = HaasRecoveryRecord(
-            id: sessionID, createdAt: Date(),
+            id: sessionID, createdAt: now(),
             message: target == nil ? "入力先を確認できないため、まだ入力していません。" : ""
         )
         do {
@@ -383,6 +392,7 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
         guard state.active?.id == sessionID else { return }
         await drainTask?.value
         if runningSessionID == sessionID { runningSessionID = nil }
+        if state.active?.id == sessionID { deliveredAt = (sessionID, now()) }
     }
 
     func cancel(sessionID: UUID, message: String?) {
@@ -589,6 +599,7 @@ final class HaasInputDelivery: ObservableObject, HaasDeliveredInputProviding {
                 case .commandPosted:
                     status = .posted
                     statusMessage = nil
+                    self.deliveredAt = (recordID, self.now())
                 case .commandNotPosted:
                     status = .pending
                     statusMessage = "入力できなかった区間を保留しました。入力先とアクセシビリティ権限を確認してください。"

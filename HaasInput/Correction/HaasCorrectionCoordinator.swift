@@ -10,6 +10,21 @@ struct HaasCorrectionDraft: Equatable {
     let decision: HaasReplacementDecision
 }
 
+/// 訂正の設定の保存先
+enum HaasCorrectionSettingsKeys {
+    static let textScale = "HaasCorrectionWindowTextScale"
+    static let timeLimitSeconds = "HaasCorrectionTimeLimitSeconds"
+}
+
+/// begin の結果
+enum HaasCorrectionStart: Equatable {
+    case ready(HaasCorrectionDraft)
+    /// 直す入力がない。今までどおり知らせる
+    case nothingToCorrect
+    /// 録音中・認識中、直し終えた、直せる時間を過ぎた。何もしない
+    case unavailable
+}
+
 /// 確定の結果。copied と failed の文は利用者に見せる
 enum HaasCorrectionResult: Equatable {
     case unchanged, replaced, copied(String), failed(String)
@@ -30,11 +45,12 @@ final class HaasCorrectionCoordinator: ObservableObject {
     static let emptyMessage = "直した文が空なので、何もしませんでした"
     static let unsavedHistoryMessage = "履歴を書き換えられませんでした。保存されていない履歴があります"
     static let historyFailedMessage = "履歴を書き換えられませんでした"
+    nonisolated static let defaultTimeLimitSeconds = 120
 
     /// 判定に使う直前の入力。配信の記録か、訂正の後にメモリで持つもの
     private struct LastInput {
         let sessionID: UUID?
-        let transcriptionID: UUID?
+        var transcriptionID: UUID?
         let text: String
         let allSegmentsPosted: Bool
         let target: (any HaasInputTargetChecking)?
@@ -45,6 +61,36 @@ final class HaasCorrectionCoordinator: ObservableObject {
         let forcedCopyReason: HaasCopyReason?
         /// 直した文をまだクリップボードに入れられていない。同じ文で確定しても、コピーだけやり直す
         var copyPending = false
+    }
+
+    /// 訂正の後にメモリで持つもの
+    private enum Carried {
+        /// 直し終えた。この入力ではもう開かない
+        case finished(sessionID: UUID?, transcriptionID: UUID?)
+        /// 直した文をまだクリップボードに入れられていない。次に開くと直した文から始め、直せる時間の制限もかけない
+        case copyPending(LastInput)
+
+        var sessionID: UUID? {
+            switch self {
+            case let .finished(sessionID, _): return sessionID
+            case let .copyPending(input): return input.sessionID
+            }
+        }
+
+        var transcriptionID: UUID? {
+            switch self {
+            case let .finished(_, transcriptionID): return transcriptionID
+            case let .copyPending(input): return input.transcriptionID
+            }
+        }
+    }
+
+    /// 直前の入力を探した結果
+    private enum Lookup {
+        case found(LastInput)
+        /// 直し終えた、または直せる時間を過ぎた
+        case closed
+        case nothing
     }
 
     /// begin から confirm / cancel までに保つ状態
@@ -65,10 +111,13 @@ final class HaasCorrectionCoordinator: ObservableObject {
     private let isIdle: () -> Bool
     private let captureReturnTarget: @MainActor () -> (any HaasInputTargetChecking)?
     private let waitForFocus: @MainActor (any HaasInputTargetChecking) async -> Void
+    private let now: () -> Date
+    /// 直せる時間 (秒)。begin のたびに読む
+    private let timeLimit: () -> TimeInterval
     private let logger = Logger(subsystem: "com.tatsumi.VoiceInkHaas", category: "HaasCorrection")
 
-    /// 訂正の後にメモリで持つ「直前の入力」。同じ録音の記録が続く間だけ使う
-    private var carried: LastInput?
+    /// 同じ録音 (配信の記録がなければ同じ履歴の行) の間だけ使う。起動し直すと消える
+    private var carried: Carried?
     private var session: Session?
 
     init(
@@ -81,7 +130,9 @@ final class HaasCorrectionCoordinator: ObservableObject {
         captureReturnTarget: @escaping @MainActor () -> (any HaasInputTargetChecking)? =
             HaasCorrectionCoordinator.captureFrontmostTarget,
         waitForFocus: @escaping @MainActor (any HaasInputTargetChecking) async -> Void =
-            HaasCorrectionCoordinator.waitUntilFocused
+            HaasCorrectionCoordinator.waitUntilFocused,
+        now: @escaping () -> Date = Date.init,
+        timeLimit: @escaping () -> TimeInterval = { HaasCorrectionCoordinator.storedTimeLimit() }
     ) {
         self.delivery = delivery
         self.monitor = monitor
@@ -91,6 +142,14 @@ final class HaasCorrectionCoordinator: ObservableObject {
         self.isIdle = isIdle
         self.captureReturnTarget = captureReturnTarget
         self.waitForFocus = waitForFocus
+        self.now = now
+        self.timeLimit = timeLimit
+    }
+
+    /// 保存した直せる時間 (秒)。キーがない・0 以下なら既定の値
+    nonisolated static func storedTimeLimit(in defaults: UserDefaults = .standard) -> TimeInterval {
+        let seconds = defaults.integer(forKey: HaasCorrectionSettingsKeys.timeLimitSeconds)
+        return TimeInterval(seconds > 0 ? seconds : defaultTimeLimitSeconds)
     }
 
     /// 本番の戻り先。入力欄を取れなければ前面のアプリを包む
@@ -110,13 +169,19 @@ final class HaasCorrectionCoordinator: ObservableObject {
     /// 録音中・認識中。このときはホットキーで何もしない
     var isBusy: Bool { !isIdle() }
 
-    /// ポップアップを出す前 (自分の窓が key になる前) に呼ぶ。録音中・認識中や、直す文がなければ nil
-    func begin() -> HaasCorrectionDraft? {
+    /// ポップアップを出す前 (自分の窓が key になる前) に呼ぶ
+    func begin() -> HaasCorrectionStart {
         // 開けなかったときに、前の状態を確定できないようにする
         session = nil
-        guard isIdle() else { return nil }
+        guard isIdle() else { return .unavailable }
+        let input: LastInput
+        switch currentInput() {
+        case let .found(found): input = found
+        case .closed: return .unavailable
+        case .nothing: return .nothingToCorrect
+        }
+        // 開けないときは前面のアプリに触れない
         let returnTarget = captureReturnTarget()
-        guard let input = currentInput() else { return nil }
         let decision = evaluate(input).0
         var expectation: HaasFieldExpectation?
         if case .replaceAutomatically = decision,
@@ -129,7 +194,7 @@ final class HaasCorrectionCoordinator: ObservableObject {
         let draft = HaasCorrectionDraft(
             originalText: input.text, transcriptionID: input.transcriptionID, decision: decision)
         session = Session(draft: draft, input: input, expectation: expectation, returnTarget: returnTarget)
-        return draft
+        return .ready(draft)
     }
 
     /// 何もせずに閉じたとき。戻り先を前面に戻す
@@ -175,31 +240,27 @@ final class HaasCorrectionCoordinator: ObservableObject {
 
     // MARK: - 直前の入力と判定
 
-    private func currentInput() -> LastInput? {
-        let delivered = delivery.lastDeliveredInput
-        if let carried, carried.sessionID == delivered?.sessionID {
-            return LastInput(
-                sessionID: carried.sessionID,
-                transcriptionID: delivered?.transcriptionID ?? carried.transcriptionID,
-                text: carried.text, allSegmentsPosted: carried.allSegmentsPosted, target: carried.target,
-                watchToken: carried.watchToken, insertionBaseline: carried.insertionBaseline,
-                forcedCopyReason: carried.forcedCopyReason,
-                copyPending: carried.copyPending)
+    private func currentInput() -> Lookup {
+        guard let delivered = delivery.lastDeliveredInput else { return latestHistoryInput() }
+        if let carried, carried.sessionID == delivered.sessionID {
+            guard case var .copyPending(input) = carried else { return .closed }
+            input.transcriptionID = delivered.transcriptionID ?? input.transcriptionID
+            return .found(input)
         }
-        if let delivered {
-            // 新しい録音の記録が来たら、前の訂正で持っていた入力は使わない
-            carried = nil
-            return LastInput(
-                sessionID: delivered.sessionID, transcriptionID: delivered.transcriptionID, text: delivered.text,
-                allSegmentsPosted: delivered.allSegmentsPosted, target: delivered.target,
-                watchToken: delivered.watchToken, insertionBaseline: delivered.insertionBaseline,
-                forcedCopyReason: nil)
-        }
-        return latestHistoryInput()
+        // 新しい録音の記録が来たら、前の訂正で持っていたものは使わない
+        carried = nil
+        guard !isPastTimeLimit(since: delivered.deliveredAt) else { return .closed }
+        return .found(LastInput(
+            sessionID: delivered.sessionID, transcriptionID: delivered.transcriptionID, text: delivered.text,
+            allSegmentsPosted: delivered.allSegmentsPosted, target: delivered.target,
+            watchToken: delivered.watchToken, insertionBaseline: delivered.insertionBaseline,
+            forcedCopyReason: nil))
     }
 
     /// 配信の記録がないとき (起動し直した後など) は、最新の履歴の文を出す。置き換えはしない
-    private func latestHistoryInput() -> LastInput? {
+    private func latestHistoryInput() -> Lookup {
+        // 履歴から直した文のコピーをやり直す。履歴の行が消されていても、直した文から始める
+        if case let .copyPending(input)? = carried, input.sessionID == nil { return .found(input) }
         var request = FetchDescriptor<Transcription>(
             sortBy: [SortDescriptor(\Transcription.timestamp, order: .reverse)])
         request.fetchLimit = 20
@@ -209,10 +270,20 @@ final class HaasCorrectionCoordinator: ObservableObject {
                 !skipped.contains(row.transcriptionStatus ?? "")
                     && !row.preferredHistoryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             })
-        else { return nil }
-        return LastInput(
+        else { return .nothing }
+        if let carried, carried.transcriptionID == row.id {
+            guard case let .copyPending(input) = carried else { return .closed }
+            return .found(input)
+        }
+        guard !isPastTimeLimit(since: row.timestamp) else { return .closed }
+        return .found(LastInput(
             sessionID: nil, transcriptionID: row.id, text: row.preferredHistoryText, allSegmentsPosted: false,
-            target: nil, watchToken: nil, insertionBaseline: nil, forcedCopyReason: .noRecord)
+            target: nil, watchToken: nil, insertionBaseline: nil, forcedCopyReason: .noRecord))
+    }
+
+    /// 入力し終えてから直せる時間を過ぎたか。ちょうどなら過ぎていない
+    private func isPastTimeLimit(since finishedAt: Date) -> Bool {
+        now().timeIntervalSince(finishedAt) > timeLimit()
     }
 
     /// 入力先と見張りの今の状態から判定する
@@ -299,12 +370,7 @@ final class HaasCorrectionCoordinator: ObservableObject {
             // 置き換えの手順は元のクリップボードを戻すので、直した文を改めてコピーする
             return copy(corrected, session: session, message: Self.interruptedMessage)
         }
-        // 直した文と同じ入力先を、新しい「直前の入力」として持つ。貼った後に操作があれば見張りを始め直さない
-        let newToken = monitor.isClean(for: token) ? monitor.startWatching() : nil
-        carried = LastInput(
-            sessionID: session.input.sessionID, transcriptionID: session.input.transcriptionID, text: corrected,
-            allSegmentsPosted: true, target: target, watchToken: newToken,
-            insertionBaseline: session.input.insertionBaseline, forcedCopyReason: nil)
+        carried = .finished(sessionID: session.input.sessionID, transcriptionID: session.input.transcriptionID)
         return .replaced
     }
 
@@ -333,16 +399,17 @@ final class HaasCorrectionCoordinator: ObservableObject {
         }
     }
 
-    /// 置き換えを完了しなかった経路の終わり。直した文をコピーし、次に開いたときは直した文から始める。
+    /// 置き換えを完了しなかった経路の終わり。直した文をコピーする。コピーできなければ、次に開いたときは直した文から始める。
     /// 入力先の中身は直した文と確かめられない (元のまま、または途中まで消えている) ので、置き換えはしない
     private func copy(_ corrected: String, session: Session?, message: String) -> HaasCorrectionResult {
         let copied = replacer.copy(corrected)
         if let input = session?.input {
-            carried = LastInput(
-                sessionID: input.sessionID, transcriptionID: input.transcriptionID, text: corrected,
-                allSegmentsPosted: false, target: nil, watchToken: nil, insertionBaseline: nil,
-                forcedCopyReason: .alreadyCorrected,
-                copyPending: !copied)
+            carried = copied
+                ? .finished(sessionID: input.sessionID, transcriptionID: input.transcriptionID)
+                : .copyPending(LastInput(
+                    sessionID: input.sessionID, transcriptionID: input.transcriptionID, text: corrected,
+                    allSegmentsPosted: false, target: nil, watchToken: nil, insertionBaseline: nil,
+                    forcedCopyReason: .alreadyCorrected, copyPending: true))
         }
         return copied ? .copied(message) : .failed(Self.copyFailedMessage)
     }

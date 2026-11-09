@@ -11,6 +11,7 @@ struct HaasDictionaryView: View {
         var id: Self { self }
     }
     @State private var section: Section = .vocabulary
+    @AppStorage(HaasTextScaleSettingsKeys.mainWindow) private var textScale = HaasTextScale.standard
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -20,7 +21,7 @@ struct HaasDictionaryView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 360)
+            .frame(maxWidth: 360 * textScale.factor)
             if section == .vocabulary {
                 HaasVocabularySection()
             } else {
@@ -38,6 +39,7 @@ private struct HaasVocabularySection: View {
     @State private var errorMessage: String?
     @State private var importPreview: HaasVocabularyImportPreview?
     @State private var transferMessage: String?
+    @AppStorage(HaasTextScaleSettingsKeys.mainWindow) private var textScale = HaasTextScale.standard
     private let logger = Logger(subsystem: "com.tatsumi.VoiceInkHaas", category: "HaasDictionary")
 
     private struct EditorRequest: Identifiable {
@@ -54,11 +56,13 @@ private struct HaasVocabularySection: View {
         )
         .sheet(item: $editor) { request in
             HaasVocabularyEditor(entry: request.entry, store: store)
+                .haasTextScaleRoot(textScale)
         }
         .sheet(item: $importPreview) { preview in
             HaasVocabularyImportSheet(preview: preview, store: store) { result in
                 transferMessage = result.message
             }
+            .haasTextScaleRoot(textScale)
         }
         .alert("辞書の項目を削除しますか？", isPresented: Binding(
             get: { entryToDelete != nil },

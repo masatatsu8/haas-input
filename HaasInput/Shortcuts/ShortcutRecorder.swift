@@ -96,6 +96,7 @@ struct ShortcutVisualization: View {
     let shortcut: Shortcut?
     let isRecording: Bool
     var isCompact = false
+    @Environment(\.haasTextScale) private var textScale
 
     var body: some View {
         HStack(spacing: 4) {
@@ -105,14 +106,14 @@ struct ShortcutVisualization: View {
                 }
             } else {
                 Text(isRecording ? LocalizedStringKey("キーを押してください") : LocalizedStringKey("設定する"))
-                    .font(.system(size: 12, weight: .medium))
+                    .haasFont(size: 12, weight: .medium)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .foregroundStyle(isRecording ? .primary : .secondary)
             }
         }
         .padding(isCompact ? 2 : 4)
-        .frame(minWidth: shortcut == nil ? 104 : nil, minHeight: isCompact ? 20 : 26)
+        .frame(minWidth: shortcut == nil ? 104 * textScale : nil, minHeight: (isCompact ? 20 : 26) * textScale)
         .fixedSize(horizontal: true, vertical: false)
         .background {
             RoundedRectangle(cornerRadius: isCompact ? 5 : 6)
@@ -129,15 +130,16 @@ private struct ShortcutKeyCap: View {
     let title: String
     let isRecording: Bool
     let isCompact: Bool
+    @Environment(\.haasTextScale) private var textScale
 
     var body: some View {
         Text(title)
-            .font(.system(size: isCompact ? 9 : 11, weight: .semibold, design: .rounded))
+            .haasFont(size: isCompact ? 9 : 11, weight: .semibold, design: .rounded)
             .lineLimit(1)
             .minimumScaleFactor(0.75)
             .foregroundStyle(foregroundColor)
             .padding(.horizontal, isCompact ? 4 : 5)
-            .frame(minHeight: isCompact ? 14 : 18)
+            .frame(minHeight: (isCompact ? 14 : 18) * textScale)
             .background {
                 RoundedRectangle(cornerRadius: isCompact ? 3 : 4)
                     .fill(backgroundColor)

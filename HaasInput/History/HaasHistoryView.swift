@@ -15,6 +15,7 @@ struct HaasHistoryView: View {
     @State private var showsRecovery = false
     @State private var errorMessage: String?
     @State private var copyMessage: String?
+    @AppStorage(HaasTextScaleSettingsKeys.mainWindow) private var textScale = HaasTextScale.standard
     private let logger = Logger(subsystem: "com.tatsumi.VoiceInkHaas", category: "History")
 
     private var visibleRows: [Transcription] {
@@ -46,7 +47,7 @@ struct HaasHistoryView: View {
             }
             HStack {
                 Text(selection.isEmpty ? "\(visibleRows.count) 件" : "\(selection.count) 件を選択中")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .haasFont(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button(selection.isEmpty ? "表示中の履歴をCSVへ" : "選択した履歴をCSVへ") { exportRows() }
                     .disabled(visibleRows.isEmpty)
@@ -62,7 +63,7 @@ struct HaasHistoryView: View {
                                 Spacer()
                                 Text(row.historyStatusLabel)
                             }
-                            .font(.caption).foregroundStyle(.secondary)
+                            .haasFont(.caption).foregroundStyle(.secondary)
                             Text(verbatim: row.preferredHistoryText)
                                 .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -70,7 +71,7 @@ struct HaasHistoryView: View {
                         .tag(row.id)
                     }
                 }
-                .frame(minWidth: 220, idealWidth: 280, maxWidth: 360)
+                .frame(minWidth: 220 * textScale.factor, idealWidth: 280 * textScale.factor, maxWidth: 360 * textScale.factor)
                 .overlay {
                     if visibleRows.isEmpty {
                         ContentUnavailableView(
@@ -82,14 +83,14 @@ struct HaasHistoryView: View {
                 }
                 if let detail {
                     detailView(detail)
-                        .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(minWidth: 300 * textScale.factor, maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ContentUnavailableView(
                         selection.count > 1 ? "複数の履歴を選択中" : "履歴を選択してください",
                         systemImage: "doc.text",
                         description: Text(selection.count > 1 ? "まとめて書き出すか削除できます。" : "文章のコピーや録音の再生ができます。")
                     )
-                    .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minWidth: 300 * textScale.factor, maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -112,7 +113,8 @@ struct HaasHistoryView: View {
                 },
                 onClose: { showsRecovery = false }
             )
-            .frame(width: 700, height: 560)
+            .haasSheetFrame(width: 700, height: 560, scale: textScale.factor)
+            .haasTextScaleRoot(textScale)
         }
         .alert("選択した履歴を削除しますか？", isPresented: $showDeleteConfirmation) {
             Button("キャンセル", role: .cancel) {}
@@ -130,7 +132,7 @@ struct HaasHistoryView: View {
     private func detailView(_ row: Transcription) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text(row.timestamp, format: .dateTime.year().month().day().hour().minute()).font(.headline)
+                Text(row.timestamp, format: .dateTime.year().month().day().hour().minute()).haasFont(.headline)
                 Spacer()
                 Button("コピー", systemImage: "doc.on.doc") {
                     if ClipboardManager.setClipboard(row.preferredHistoryText) { copyMessage = "コピーしました" }
@@ -142,14 +144,14 @@ struct HaasHistoryView: View {
                 Text("録音 \(row.duration.formatted(.number.precision(.fractionLength(1)))) 秒")
                 if let name = row.transcriptionModelName { Text(verbatim: name) }
             }
-            .font(.caption).foregroundStyle(.secondary)
+            .haasFont(.caption).foregroundStyle(.secondary)
             if let audio = row.availableHistoryAudioURL {
                 HaasHistoryAudioPlayer(url: audio)
             } else {
                 Text("再生できる録音ファイルはありません。")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .haasFont(.caption).foregroundStyle(.secondary)
             }
-            if let copyMessage { Text(copyMessage).font(.caption).foregroundStyle(.secondary) }
+            if let copyMessage { Text(copyMessage).haasFont(.caption).foregroundStyle(.secondary) }
             ScrollView {
                 Text(verbatim: row.preferredHistoryText)
                     .textSelection(.enabled)

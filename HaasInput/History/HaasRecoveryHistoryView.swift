@@ -18,7 +18,7 @@ struct HaasRecoveryHistoryView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("入力確認待ち (\(records.count))").font(.headline)
+                Text("入力確認待ち (\(records.count))").haasFont(.headline)
                 Spacer()
                 Button("閉じる", action: onClose).keyboardShortcut(.cancelAction)
             }.padding(20)
@@ -54,11 +54,11 @@ struct HaasRecoveryHistoryView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 Text("過去の録音で入力を確認できなかった文です。ここにある文を自動で再送することはありません。")
-                    .font(.callout)
+                    .haasFont(.callout)
                     .foregroundStyle(.secondary)
                 if errorMessage == nil {
                     Text("過去の確認待ちを残したまま、新しい録音を開始できます。")
-                        .font(.callout)
+                        .haasFont(.callout)
                         .foregroundStyle(.secondary)
                 }
                 recoveryError
@@ -76,24 +76,24 @@ struct HaasRecoveryHistoryView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
                                 Text(dateLabel(record.createdAt))
-                                    .font(.callout.weight(.semibold))
+                                    .haasFont(.callout, weight: .semibold)
                                 Spacer()
                                 Image(systemName: "chevron.right")
-                                    .font(.caption)
+                                    .haasFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             if !record.ledger.pendingText.isEmpty {
                                 Text("未入力: \(record.ledger.pendingText.count) 文字")
-                                    .font(.caption)
+                                    .haasFont(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             if !record.ledger.uncertainText.isEmpty {
                                 Text("入力済みか要確認: \(record.ledger.uncertainText.count) 文字")
-                                    .font(.caption)
+                                    .haasFont(.caption)
                                     .foregroundStyle(.orange)
                             }
                             Text(verbatim: record.ledger.fullText)
-                                .font(.callout)
+                                .haasFont(.callout)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }
@@ -121,7 +121,7 @@ struct HaasRecoveryHistoryView: View {
                 .buttonStyle(.borderless)
                 Spacer()
                 Text(dateLabel(record.createdAt))
-                    .font(.caption)
+                    .haasFont(.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(16)
@@ -138,8 +138,8 @@ struct HaasRecoveryHistoryView: View {
                     recoveryError
                     if !record.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("保存時の状況").font(.caption.weight(.semibold))
-                            Text(verbatim: record.message).font(.caption)
+                            Text("保存時の状況").haasFont(.caption, weight: .semibold)
+                            Text(verbatim: record.message).haasFont(.caption)
                         }
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
@@ -168,7 +168,7 @@ struct HaasRecoveryHistoryView: View {
             Divider()
             VStack(alignment: .leading, spacing: 10) {
                 Text("コピーだけでは記録は消えません。入力先の確認が終わったら「確認済み」にしてください。")
-                    .font(.caption)
+                    .haasFont(.caption)
                     .foregroundStyle(.secondary)
                 HStack {
                     if !record.ledger.pendingText.isEmpty {
@@ -189,10 +189,10 @@ struct HaasRecoveryHistoryView: View {
 
     private func recoveryText(title: String, description: String, text: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline)
-            Text(description).font(.caption).foregroundStyle(.secondary)
+            Text(title).haasFont(.headline)
+            Text(description).haasFont(.caption).foregroundStyle(.secondary)
             Text(verbatim: text)
-                .font(.body)
+                .haasFont(.body)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -202,7 +202,7 @@ struct HaasRecoveryHistoryView: View {
     private var recoveryError: some View {
         if let errorMessage {
             Text(errorMessage)
-                .font(.callout)
+                .haasFont(.callout)
                 .foregroundStyle(.red)
                 .textSelection(.enabled)
         }

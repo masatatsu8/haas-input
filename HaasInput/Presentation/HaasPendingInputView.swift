@@ -60,6 +60,7 @@ struct HaasPendingInputActions {
 struct HaasPendingInputView: View {
     @ObservedObject var delivery: HaasInputDelivery = .shared
     var canResume = true
+    @Environment(\.haasTextScale) private var textScale
 
     var body: some View {
         let state = HaasPendingInputState(delivery: delivery, canResume: canResume)
@@ -68,7 +69,7 @@ struct HaasPendingInputView: View {
                 ScrollView {
                     HaasPendingInputBody(state: state)
                 }
-                .frame(maxHeight: 160)
+                .frame(maxHeight: 160 * textScale)
                 HaasPendingInputControls(state: state, actions: HaasPendingInputActions(
                     acknowledge: delivery.acknowledgeUncertainInput,
                     copy: { delivery.copyPending() },
@@ -89,7 +90,7 @@ struct HaasPendingInputBody: View {
         VStack(alignment: .leading, spacing: 12) {
             if !state.statusMessage.isEmpty {
                 Text(state.statusMessage)
-                    .font(.caption)
+                    .haasFont(.caption)
                     .foregroundStyle(.secondary)
             }
             if let error = state.errorMessage, error != state.statusMessage {
@@ -98,7 +99,7 @@ struct HaasPendingInputBody: View {
                 } icon: {
                     Image(systemName: "exclamationmark.triangle")
                 }
-                .font(.caption)
+                .haasFont(.caption)
                 .foregroundStyle(.orange)
             }
             if !state.uncertainText.isEmpty {
@@ -114,10 +115,10 @@ struct HaasPendingInputBody: View {
     private func textSection(_ title: String, text: String, uncertain: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: uncertain ? "questionmark.circle" : "text.alignleft")
-                .font(.caption.weight(.semibold))
+                .haasFont(.caption, weight: .semibold)
                 .foregroundStyle(uncertain ? Color.orange : Color.secondary)
             Text(verbatim: text)
-                .font(.callout)
+                .haasFont(.callout)
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)

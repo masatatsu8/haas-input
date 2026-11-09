@@ -41,12 +41,23 @@ private struct HaasGeneralSettingsView: View {
     @AppStorage(RecorderDisplaySettingsKeys.showLiveTranscript) private var showLiveTranscript = true
     @AppStorage("clipboardRestoreDelay") private var clipboardRestoreDelay = 0.5
     @AppStorage(AppAppearancePreference.userDefaultsKey) private var appearance = AppAppearancePreference.system
+    @AppStorage(HaasTextScaleSettingsKeys.mainWindow) private var textScale = HaasTextScale.standard
+    @AppStorage(HaasCorrectionSettingsKeys.textScale) private var correctionTextScale = HaasTextScale.standard
+    @AppStorage(HaasCorrectionSettingsKeys.timeLimitSeconds) private var correctionTimeLimit =
+        HaasCorrectionCoordinator.defaultTimeLimitSeconds
     @AppStorage(CleanupSettingsKeys.isTranscriptionCleanupEnabled) private var transcriptCleanup = true
     @AppStorage(CleanupSettingsKeys.transcriptionRetentionMinutes) private var transcriptRetention = 10080
     @AppStorage(CleanupSettingsKeys.isAudioCleanupEnabled) private var audioCleanup = false
     @AppStorage(CleanupSettingsKeys.audioRetentionPeriod) private var audioRetention = 7
     @State private var punctuationAvailability = ""
     @State private var cancelRecorderID = UUID()
+
+    /// 実際に使う直せる時間。0 以下が保存されていれば既定の値を見せる
+    private var effectiveCorrectionTimeLimit: Binding<Int> {
+        Binding(
+            get: { correctionTimeLimit > 0 ? correctionTimeLimit : HaasCorrectionCoordinator.defaultTimeLimitSeconds },
+            set: { correctionTimeLimit = $0 })
+    }
 
     var body: some View {
         Form {
@@ -80,7 +91,7 @@ private struct HaasGeneralSettingsView: View {
                     Button("予備のショートカットを追加") { shortcuts.secondaryRecordingShortcut = .custom }
                 }
                 Text("入力先を選んでから使います。キーの組み合わせや、修飾キーだけの操作も登録できます。")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .haasFont(.caption).foregroundStyle(.secondary)
             }
             .disabled(engine.recordingState != .idle)
 
@@ -110,9 +121,27 @@ private struct HaasGeneralSettingsView: View {
                     }
                 }
                 Text("標準の取消操作は、録音パネルが表示されている間にEscを2回押します。")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .haasFont(.caption).foregroundStyle(.secondary)
             }
             .disabled(engine.recordingState != .idle)
+
+            Section("直前の入力を直す") {
+                Picker("文字の大きさ", selection: $correctionTextScale) {
+                    ForEach(HaasTextScale.allCases) { Text($0.displayName).tag($0) }
+                }
+                Picker("直せる時間", selection: effectiveCorrectionTimeLimit) {
+                    Text("30秒").tag(30)
+                    Text("1分").tag(60)
+                    Text("2分").tag(120)
+                    Text("5分").tag(300)
+                    Text("10分").tag(600)
+                    if ![30, 60, 120, 300, 600].contains(effectiveCorrectionTimeLimit.wrappedValue) {
+                        Text("\(effectiveCorrectionTimeLimit.wrappedValue)秒").tag(effectiveCorrectionTimeLimit.wrappedValue)
+                    }
+                }
+                Text("直して確定した後と、入力し終えてから直せる時間を過ぎた後は、ショートカットを押しても開きません。")
+                    .haasFont(.caption).foregroundStyle(.secondary)
+            }
 
             Section("句読点") {
                 Picker("補い方", selection: $punctuationMode) {
@@ -121,12 +150,12 @@ private struct HaasGeneralSettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                Text(punctuationMode.description).font(.callout).foregroundStyle(.secondary)
+                Text(punctuationMode.description).haasFont(.callout).foregroundStyle(.secondary)
                 if punctuationMode.usesOnDeviceModel {
-                    Text(punctuationAvailability).font(.caption).foregroundStyle(.secondary)
+                    Text(punctuationAvailability).haasFont(.caption).foregroundStyle(.secondary)
                 }
                 Text("変更は次の録音から反映されます。")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .haasFont(.caption).foregroundStyle(.secondary)
             }
 
             Section("表示") {
@@ -141,6 +170,9 @@ private struct HaasGeneralSettingsView: View {
                         Text(preference.displayName).tag(preference)
                     }
                 }
+                Picker("文字の大きさ", selection: $textScale) {
+                    ForEach(HaasTextScale.allCases) { Text($0.displayName).tag($0) }
+                }
             }
 
             Section("クリップボード") {
@@ -154,7 +186,7 @@ private struct HaasGeneralSettingsView: View {
                     Text("5秒").tag(5.0)
                 }
                 Text("文字入力に一時的にクリップボードを使い、その後に元の内容へ戻します。途中で別の内容をコピーした場合は、その新しい内容を保持します。")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .haasFont(.caption).foregroundStyle(.secondary)
             }
 
             Section("履歴の保存期間") {
@@ -187,7 +219,7 @@ private struct HaasGeneralSettingsView: View {
                     Text("削除した録音はゴミ箱へ移します。")
                     Text("自動整理は録音終了後に行います。入力確認待ちの文章は、履歴を削除しても確認が終わるまで残ります。")
                 }
-                .font(.caption).foregroundStyle(.secondary)
+                .haasFont(.caption).foregroundStyle(.secondary)
             }
 
             Section("起動") {
@@ -197,7 +229,7 @@ private struct HaasGeneralSettingsView: View {
                 ))
                 .disabled(launchAtLogin.isUpdating)
                 if let message = launchAtLogin.errorMessage {
-                    Text(message).font(.caption).foregroundStyle(.red)
+                    Text(message).haasFont(.caption).foregroundStyle(.red)
                 }
             }
         }
@@ -221,7 +253,7 @@ private struct HaasGeneralSettingsView: View {
             }
         }
         .labelsHidden()
-        .frame(maxWidth: 180)
+        .frame(maxWidth: 180 * textScale.factor)
     }
 
     private func refreshPunctuationAvailability() {

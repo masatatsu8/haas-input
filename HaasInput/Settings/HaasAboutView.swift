@@ -6,6 +6,7 @@ struct HaasAboutView: View {
     @State private var licenseText: String?
     @State private var licenseTitle = ""
     @State private var copyMessage = ""
+    @AppStorage(HaasTextScaleSettingsKeys.mainWindow) private var textScale = HaasTextScale.standard
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "開発版"
@@ -15,7 +16,7 @@ struct HaasAboutView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(HaasAppConfiguration.name).font(.largeTitle.bold())
+                    Text(HaasAppConfiguration.name).haasFont(.largeTitle, weight: .bold)
                     Text("バージョン \(version)").foregroundStyle(.secondary)
                 }
                 Text("Haasによる日本語の音声入力アプリです。音声認識はこのMacで行います。認識データを同梱していない構成では、初回の取得に通信を使います。")
@@ -30,8 +31,8 @@ struct HaasAboutView: View {
                             copyMessage = ClipboardManager.setClipboard(report) ? "診断情報をコピーしました。" : "コピーできませんでした。"
                         }
                         Text("環境と操作状態をコピーします。認識本文や辞書の内容は含めません。")
-                            .font(.caption).foregroundStyle(.secondary)
-                        if !copyMessage.isEmpty { Text(copyMessage).font(.caption) }
+                            .haasFont(.caption).foregroundStyle(.secondary)
+                        if !copyMessage.isEmpty { Text(copyMessage).haasFont(.caption) }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
@@ -54,25 +55,26 @@ struct HaasAboutView: View {
                 }
             }
             .padding(26)
-            .frame(maxWidth: 720, alignment: .leading)
+            .frame(maxWidth: 720 * textScale.factor, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .sheet(isPresented: Binding(get: { licenseText != nil }, set: { if !$0 { licenseText = nil } })) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text(licenseTitle).font(.headline)
+                    Text(licenseTitle).haasFont(.headline)
                     Spacer()
                     Button("閉じる") { licenseText = nil }.keyboardShortcut(.cancelAction)
                 }
                 ScrollView {
                     Text(verbatim: licenseText ?? "")
-                        .font(.system(.caption, design: .monospaced))
+                        .haasFont(.caption, design: .monospaced)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .padding(24)
-            .frame(width: 680, height: 500)
+            .haasSheetFrame(width: 680, height: 500, scale: textScale.factor)
+            .haasTextScaleRoot(textScale)
         }
     }
 

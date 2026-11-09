@@ -7,14 +7,15 @@ struct HaasVocabularyImportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var replacements = Set<String>()
     @State private var errorMessage: String?
+    @Environment(\.haasTextScale) private var textScale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Haas辞書を読み込む").font(.headline)
+            Text("Haas辞書を読み込む").haasFont(.headline)
             Text("追加 \(preview.addedCount) 件・同じ登録 \(preview.unchangedCount) 件・内容の違う登録 \(preview.conflictCount) 件")
-                .font(.callout)
+                .haasFont(.callout)
             Text("内容が違う登録は現在の辞書を保持します。更新したい項目だけ選んでください。")
-                .font(.callout)
+                .haasFont(.callout)
                 .foregroundStyle(.secondary)
 
             ScrollView {
@@ -29,7 +30,7 @@ struct HaasVocabularyImportSheet: View {
             if let errorMessage {
                 Text(errorMessage)
                     .foregroundStyle(.red)
-                    .font(.callout)
+                    .haasFont(.callout)
             }
             HStack {
                 Spacer()
@@ -43,7 +44,7 @@ struct HaasVocabularyImportSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 580, height: 520)
+        .haasSheetFrame(width: 580, height: 520, scale: textScale)
     }
 
     @ViewBuilder
@@ -59,10 +60,10 @@ struct HaasVocabularyImportSheet: View {
                 entryDescription(item.incoming)
             case .conflict:
                 if let existing = item.existing {
-                    Text("現在の登録").font(.caption).foregroundStyle(.secondary)
+                    Text("現在の登録").haasFont(.caption).foregroundStyle(.secondary)
                     entryDescription(existing)
                 }
-                Text("共有ファイルの登録").font(.caption).foregroundStyle(.secondary)
+                Text("共有ファイルの登録").haasFont(.caption).foregroundStyle(.secondary)
                 entryDescription(item.incoming)
                 Toggle("この内容で現在の登録を更新する", isOn: Binding(
                     get: { replacements.contains(item.id) },
@@ -80,9 +81,9 @@ struct HaasVocabularyImportSheet: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(verbatim: entry.writtenForm).fontWeight(.medium)
             Text(entry.readings.isEmpty ? "読みの指定なし" : entry.readings.joined(separator: " / "))
-                .font(.callout)
+                .haasFont(.callout)
                 .foregroundStyle(.secondary)
-            Text(entry.category.displayName).font(.caption).foregroundStyle(.secondary)
+            Text(entry.category.displayName).haasFont(.caption).foregroundStyle(.secondary)
         }
         .textSelection(.enabled)
     }

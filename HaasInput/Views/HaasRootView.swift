@@ -7,6 +7,7 @@ struct HaasRootView: View {
     @ObservedObject var app: HaasAppModel
     @Environment(\.openWindow) private var openWindow
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(HaasTextScaleSettingsKeys.mainWindow) private var textScale = HaasTextScale.standard
 
     var body: some View {
         Group {
@@ -17,7 +18,7 @@ struct HaasRootView: View {
             } else {
                 VStack(alignment: .leading, spacing: 18) {
                     Label("保存済みデータを開けません", systemImage: "externaldrive.badge.exclamationmark")
-                        .font(.title2.bold())
+                        .haasFont(.title2, weight: .bold)
                     Text(app.startupError ?? "起動を完了できませんでした。")
                         .textSelection(.enabled)
                     Button("保存先を開く") { HaasStorageLocation.open() }
@@ -28,6 +29,7 @@ struct HaasRootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
+        .haasTextScaleRoot(textScale)
         .frame(minWidth: 760, minHeight: 560)
         .onAppear {
             app.openMainWindow = { openWindow(id: HaasAppConfiguration.mainWindowID) }
