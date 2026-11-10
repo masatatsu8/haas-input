@@ -159,6 +159,8 @@ final class HaasCorrectionPanelModel: ObservableObject {
 /// 直す文を入れる欄。NSTextView なので日本語入力の変換が使える
 private struct HaasCorrectionTextEditor: NSViewRepresentable {
     @Binding var text: String
+    /// 文字の大きさ (pt)。窓を開いたときの値のまま変えない
+    let fontSize: CGFloat
     /// 欄の文字が置き換わる直前。変換中の文字の置き換えも含む。3つ目は取り消し・やり直しのとき true
     let willReplace: (NSRange, String, Bool) -> Void
     /// 欄の文を外から書き換えた後
@@ -176,7 +178,7 @@ private struct HaasCorrectionTextEditor: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.isRichText = false
         textView.allowsUndo = true
-        textView.font = .systemFont(ofSize: NSFont.systemFontSize + 1)
+        textView.font = .systemFont(ofSize: fontSize)
         textView.textContainerInset = NSSize(width: 4, height: 6)
         textView.string = text
         textView.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
@@ -234,6 +236,7 @@ private struct HaasCorrectionTextEditor: NSViewRepresentable {
 
 private struct HaasCorrectionPanelView: View {
     @ObservedObject var model: HaasCorrectionPanelModel
+    @Environment(\.haasTextScale) private var textScale
     let onConfirm: () -> Void
     let onCancel: () -> Void
 
@@ -241,14 +244,15 @@ private struct HaasCorrectionPanelView: View {
         VStack(alignment: .leading, spacing: 12) {
             HaasCorrectionTextEditor(
                 text: $model.corrected,
+                fontSize: (NSFont.systemFontSize + 1) * textScale,
                 willReplace: { [model] in model.recordEdit(range: $0, replacement: $1, isUndoOrRedo: $2) },
                 didResetText: { [model] in model.discardEdits() }
             )
-            .frame(minHeight: 110)
+            .frame(minHeight: 110 * textScale)
 
             if !model.suggestions.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("辞書に登録する候補").font(.caption).foregroundStyle(.secondary)
+                    Text("辞書に登録する候補").haasFont(.caption).foregroundStyle(.secondary)
                     ForEach(model.suggestions) { suggestion in
                         suggestionRow(suggestion)
                     }
@@ -256,7 +260,7 @@ private struct HaasCorrectionPanelView: View {
             }
 
             if let notice = model.notice {
-                Text(notice).font(.caption).foregroundStyle(.secondary)
+                Text(notice).haasFont(.caption).foregroundStyle(.secondary)
             }
 
             HStack {
@@ -270,7 +274,7 @@ private struct HaasCorrectionPanelView: View {
             }
         }
         .padding(16)
-        .frame(width: 520)
+        .frame(width: 520 * textScale)
     }
 
     private func suggestionRow(_ suggestion: HaasDictionarySuggestion) -> some View {
@@ -293,10 +297,10 @@ private struct HaasCorrectionPanelView: View {
                         set: { model.setReading($0, for: suggestion.id) })
                 )
                 .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 160)
+                .frame(maxWidth: 160 * textScale)
             }
             Spacer()
-            Text(kindLabel(suggestion.kind)).font(.caption).foregroundStyle(.secondary)
+            Text(kindLabel(suggestion.kind)).haasFont(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -367,7 +371,15 @@ final class HaasCorrectionPanelController: NSObject, NSWindowDelegate {
             return
         }
         // 入力先と判定を記録するため、自分の窓を出す前に begin を呼ぶ
-        guard let draft = coordinator.begin() else {
+        let draft: HaasCorrectionDraft
+        switch coordinator.begin() {
+        case let .ready(ready):
+            draft = ready
+        case .unavailable:
+            // 直し終えた入力や、直せる時間を過ぎた入力では知らせもしない
+            gate.finish()
+            return
+        case .nothingToCorrect:
             gate.finish()
             notify("直す入力がありません", .info)
             return
@@ -377,7 +389,9 @@ final class HaasCorrectionPanelController: NSObject, NSWindowDelegate {
         }
         self.model = model
         let view = HaasCorrectionPanelView(
-            model: model, onConfirm: { [weak self] in self?.confirm() }, onCancel: { [weak self] in self?.close() })
+            model: model, onConfirm: { [weak self] in self?.confirm() }, onCancel: { [weak self] in self?.close() }
+        )
+        .haasTextScaleRoot(HaasTextScale.stored(forKey: HaasCorrectionSettingsKeys.textScale))
         let hosting = NSHostingView(rootView: view)
         let window = HaasCorrectionWindow(contentRect: NSRect(origin: .zero, size: hosting.fittingSize))
         window.contentView = hosting

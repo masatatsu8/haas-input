@@ -41,15 +41,15 @@ struct AudioInputChannelsView: View {
 
                 if savedChannels != nil, selectedChannel == nil {
                     Text("保存した入力チャンネルを利用できません。利用できるようになるまでは自動で選びます。")
-                        .font(.caption)
+                        .haasFont(.caption)
                         .foregroundStyle(.secondary)
                 } else if deviceManager.isRecordingActive {
                     Text("入力チャンネルは録音を止めてから変更してください。")
-                        .font(.caption)
+                        .haasFont(.caption)
                         .foregroundStyle(.secondary)
                 } else {
                     Text("マイクを接続した入力を選びます。「自動」では機器の推奨入力を使います。")
-                        .font(.caption)
+                        .haasFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }

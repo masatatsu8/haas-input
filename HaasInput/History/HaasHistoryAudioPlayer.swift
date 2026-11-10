@@ -22,7 +22,7 @@ struct HaasHistoryAudioPlayer: View {
                 Button("\(playback.rate.formatted())倍") { playback.cycleRate() }
                     .help("再生速度を切り替えます")
             }
-            if let message = playback.errorMessage { Text(message).font(.caption).foregroundStyle(.red) }
+            if let message = playback.errorMessage { Text(message).haasFont(.caption).foregroundStyle(.red) }
         }
         .onAppear { playback.load(url) }
         .onChange(of: url) { _, value in playback.load(value) }

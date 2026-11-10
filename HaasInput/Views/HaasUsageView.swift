@@ -6,6 +6,7 @@ import SwiftUI
 struct HaasUsageView: View {
     @ObservedObject private var recorder: HaasUsageRecorder
     @AppStorage("usageDashboardPanel") private var panel = "today"
+    @Environment(\.haasTextScale) private var textScale
 
     init(recorder: HaasUsageRecorder) {
         self.recorder = recorder
@@ -22,7 +23,7 @@ struct HaasUsageView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("記録").font(.largeTitle.bold())
+                    Text("記録").haasFont(.largeTitle, weight: .bold)
                     Spacer()
                     Picker("記録", selection: $panel) {
                         Text("今日").tag("today")
@@ -36,16 +37,16 @@ struct HaasUsageView: View {
                 Group {
                     if panel == "comparison" { comparisonPanel(summary) } else { todayPanel(summary) }
                 }
-                .frame(maxWidth: .infinity, minHeight: 170, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 170 * textScale, alignment: .topLeading)
 
                 Divider()
 
                 VStack(alignment: .leading, spacing: 8) {
                     sectionLabel("この1年")
-                    Text(HaasUsageWording.yearHeadline(recordings: summary.gridRecordings)).font(.headline)
+                    Text(HaasUsageWording.yearHeadline(recordings: summary.gridRecordings)).haasFont(.headline)
                     UsageGrass(summary: summary)
                     if summary.usedDays == 0 {
-                        Text(HaasUsageWording.emptyHistory).font(.callout).foregroundStyle(.secondary)
+                        Text(HaasUsageWording.emptyHistory).haasFont(.callout).foregroundStyle(.secondary)
                     }
                 }
 
@@ -61,7 +62,7 @@ struct HaasUsageView: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
             .padding(26)
-            .frame(maxWidth: 800)
+            .frame(maxWidth: 800 * textScale)
             .frame(maxWidth: .infinity)
         }
     }
@@ -73,11 +74,11 @@ struct HaasUsageView: View {
             sectionLabel("今日")
             todayAmount(summary)
             if let detail = HaasUsageWording.todayDetail(summary) {
-                Text(detail).font(.callout).foregroundStyle(.secondary)
+                Text(detail).haasFont(.callout).foregroundStyle(.secondary)
             }
             if let streak = HaasUsageWording.streak(summary) {
                 Text(streak)
-                    .font(.callout)
+                    .haasFont(.callout)
                     .foregroundStyle(UsagePalette.cheerText)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -92,9 +93,9 @@ struct HaasUsageView: View {
     private func todayAmount(_ summary: HaasUsageSummary) -> some View {
         if summary.today.isUsed {
             Text(HaasUsageWording.todayAmount(summary.today))
-                .font(.system(size: 30, weight: .bold))
+                .haasFont(size: 30, weight: .bold)
         } else {
-            Text(HaasUsageWording.notUsedToday).font(.title2.bold())
+            Text(HaasUsageWording.notUsedToday).haasFont(.title2, weight: .bold)
         }
     }
 
@@ -108,16 +109,16 @@ struct HaasUsageView: View {
                     UsageRing(ratio: HaasUsageWording.comparisonRatio(summary),
                               center: HaasUsageWording.duration(summary.today.duration))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(comparison.headline).font(.title3.bold())
-                        Text(comparison.detail).font(.callout).foregroundStyle(.secondary)
+                        Text(comparison.headline).haasFont(.title3, weight: .bold)
+                        Text(comparison.detail).haasFont(.callout).foregroundStyle(.secondary)
                     }
                 }
             } else {
                 // 平均が出せるまではリングを出さない
                 VStack(alignment: .leading, spacing: 4) {
                     todayAmount(summary)
-                    Text(comparison.headline).font(.title3.bold()).padding(.top, 4)
-                    Text(comparison.detail).font(.callout).foregroundStyle(.secondary)
+                    Text(comparison.headline).haasFont(.title3, weight: .bold).padding(.top, 4)
+                    Text(comparison.detail).haasFont(.callout).foregroundStyle(.secondary)
                 }
             }
             VStack(alignment: .leading, spacing: 6) {
@@ -128,7 +129,7 @@ struct HaasUsageView: View {
     }
 
     private func sectionLabel(_ text: String) -> some View {
-        Text(text).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+        Text(text).haasFont(.subheadline, weight: .semibold).foregroundStyle(.secondary)
     }
 }
 
@@ -187,14 +188,16 @@ private enum UsageDateText {
 private struct UsageGrass: View {
     let summary: HaasUsageSummary
     @State private var availableWidth: CGFloat = 0
+    @Environment(\.haasTextScale) private var textScale
 
     private let spacing: CGFloat = 3
-    private let maxCell: CGFloat = 12
-    private let minCell: CGFloat = 4
-    private let weekdayWidth: CGFloat = 20
     private let inset: CGFloat = 12
-    private let monthRowHeight: CGFloat = 16
-    private let monthLabelWidth: CGFloat = 24
+    private var maxCell: CGFloat { 12 * textScale }
+    /// 狭い窓でも1年分が収まるように、いちばん小さい升目には倍率を掛けない
+    private let minCell: CGFloat = 4
+    private var weekdayWidth: CGFloat { 20 * textScale }
+    private var monthRowHeight: CGFloat { 16 * textScale }
+    private var monthLabelWidth: CGFloat { 24 * textScale }
 
     private var weeks: [[HaasUsageDay]] {
         stride(from: 0, to: summary.grid.count, by: 7).map { Array(summary.grid[$0..<min($0 + 7, summary.grid.count)]) }
@@ -241,7 +244,7 @@ private struct UsageGrass: View {
         return ZStack(alignment: .topLeading) {
             ForEach(marks, id: \.column) { mark in
                 Text(mark.text)
-                    .font(.caption2)
+                    .haasFont(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize()
                     .offset(x: weekdayWidth + spacing + CGFloat(mark.column) * (cell + spacing))
@@ -255,7 +258,7 @@ private struct UsageGrass: View {
         return VStack(alignment: .trailing, spacing: spacing) {
             ForEach(labels.indices, id: \.self) { row in
                 Text(labels[row] ?? "")
-                    .font(.caption2)
+                    .haasFont(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize()
                     .frame(height: cell)
@@ -267,13 +270,13 @@ private struct UsageGrass: View {
     private var legend: some View {
         HStack(spacing: 4) {
             Spacer()
-            Text(HaasUsageWording.legendLess).font(.caption2).foregroundStyle(.secondary)
+            Text(HaasUsageWording.legendLess).haasFont(.caption2).foregroundStyle(.secondary)
             ForEach(0...4, id: \.self) { level in
                 RoundedRectangle(cornerRadius: 2)
                     .fill(UsagePalette.grass(level: level))
-                    .frame(width: 12, height: 12)
+                    .frame(width: 12 * textScale, height: 12 * textScale)
             }
-            Text(HaasUsageWording.legendMore).font(.caption2).foregroundStyle(.secondary)
+            Text(HaasUsageWording.legendMore).haasFont(.caption2).foregroundStyle(.secondary)
         }
     }
 
@@ -300,6 +303,7 @@ private struct UsageGrass: View {
 private struct UsageRing: View {
     let ratio: Double
     let center: String
+    @Environment(\.haasTextScale) private var textScale
 
     var body: some View {
         ZStack {
@@ -311,11 +315,11 @@ private struct UsageRing: View {
                     .rotationEffect(.degrees(-90))
             }
             VStack(spacing: 1) {
-                Text(center).font(.headline)
-                Text("今日").font(.caption).foregroundStyle(.secondary)
+                Text(center).haasFont(.headline)
+                Text("今日").haasFont(.caption).foregroundStyle(.secondary)
             }
         }
-        .frame(width: 92, height: 92)
+        .frame(width: 92 * textScale, height: 92 * textScale)
     }
 }
 
@@ -342,7 +346,7 @@ private struct UsageWeekBars: View {
             HStack(spacing: 6) {
                 ForEach(days.indices, id: \.self) { index in
                     Text(index == days.count - 1 ? "今日" : UsageDateText.weekday(days[index].day))
-                        .font(.caption2)
+                        .haasFont(.caption2)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                 }
@@ -360,10 +364,10 @@ private struct UsageTile: View {
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text(value).font(.title3.bold())
+                Text(title).haasFont(.caption, weight: .semibold).foregroundStyle(.secondary)
+                Text(value).haasFont(.title3, weight: .bold)
                 if let note {
-                    Text(note).font(.caption).foregroundStyle(.secondary)
+                    Text(note).haasFont(.caption).foregroundStyle(.secondary)
                 }
             }
             .padding(4)

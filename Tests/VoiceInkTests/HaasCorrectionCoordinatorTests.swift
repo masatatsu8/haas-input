@@ -26,14 +26,28 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         XCTAssertFalse(fixture.coordinator.isBusy)
         controller.show()
         XCTAssertEqual(notices, ["直す入力がありません"])
+
+        // 直せる時間を過ぎた入力は、知らせずに何もしない
+        fixture.deliver(text: "さいとうです", field: FakeField(text: "さいとうです"))
+        fixture.now = fixture.now.addingTimeInterval(121)
+        XCTAssertEqual(fixture.coordinator.begin(), .unavailable)
+        controller.show()
+        XCTAssertEqual(notices, ["直す入力がありません"])
+        XCTAssertEqual(fixture.returnTarget.activateCount, 0)
+        XCTAssertEqual(fixture.returnTargetCaptures, 0, "開けないときは前面のアプリに触れない")
+
+        // 何もしなかった後も、次のホットキーは効く
+        fixture.provider.lastDeliveredInput = nil
+        controller.show()
+        XCTAssertEqual(notices, ["直す入力がありません", "直す入力がありません"])
     }
 
-    func testBeginReturnsNilWhileBusy() throws {
+    func testBeginIsUnavailableWhileBusy() throws {
         let fixture = try CorrectionFixture()
         defer { fixture.cleanUp() }
         fixture.deliver(text: "さいとうです", field: FakeField(text: "さいとうです"))
         fixture.idle = false
-        XCTAssertNil(fixture.coordinator.begin())
+        XCTAssertEqual(fixture.coordinator.begin(), .unavailable)
         XCTAssertEqual(fixture.returnTarget.activateCount, 0)
     }
 
@@ -43,7 +57,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         try fixture.addHistory(text: "古い文", timestamp: Date(timeIntervalSinceNow: -60))
         let latest = try fixture.addHistory(text: "新しい文", enhancedText: "新しい文。", timestamp: Date())
 
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.originalText, "新しい文。")
         XCTAssertEqual(draft.transcriptionID, latest.id)
         XCTAssertEqual(draft.decision, .copyOnly(.noRecord))
@@ -54,7 +68,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         defer { fixture.cleanUp() }
         let row = try fixture.addHistory(text: "さいとうです")
         fixture.deliver(text: "さいとうです", field: FakeField(text: "さいとうです"), transcriptionID: row.id)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
 
         let outcome = await fixture.coordinator.confirm(
             draft, corrected: "さいとうです", register: [newWord("斎藤", reading: "さいとう")])
@@ -73,7 +87,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let row = try fixture.addHistory(text: "さいとうです")
         let field = FakeField(text: "前の文。さいとうです")
         fixture.deliver(text: "さいとうです", field: field, transcriptionID: row.id)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .replaceAutomatically(deleteCount: 6))
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
@@ -86,11 +100,8 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(saved.text, "さいとうです")
         XCTAssertFalse(fixture.context.hasChanges)
 
-        // 置き換えた文が新しい「直前の入力」になり、続けて直せる
-        let next = try XCTUnwrap(fixture.coordinator.begin())
-        XCTAssertEqual(next.originalText, "斎藤です")
-        XCTAssertEqual(next.transcriptionID, row.id)
-        XCTAssertEqual(next.decision, .replaceAutomatically(deleteCount: 4))
+        // 直し終えたので、同じ入力ではもう開かない
+        XCTAssertEqual(fixture.coordinator.begin(), .unavailable)
     }
 
     func testCopyWhenDecisionDowngradesAtConfirm() async throws {
@@ -98,7 +109,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         defer { fixture.cleanUp() }
         let field = FakeField(text: "さいとうです")
         fixture.deliver(text: "さいとうです", field: field)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .replaceAutomatically(deleteCount: 6))
         fixture.watcher.userActed()
 
@@ -109,10 +120,8 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.replacer.copies, ["斎藤です"])
         XCTAssertEqual(field.text, "さいとうです")
 
-        // 次に開くと直した文から始め、入力先の中身は直した文ではないのでコピーだけにする
-        let next = try XCTUnwrap(fixture.coordinator.begin())
-        XCTAssertEqual(next.originalText, "斎藤です")
-        XCTAssertEqual(next.decision, .copyOnly(.alreadyCorrected))
+        // 直してコピーした後は、同じ入力ではもう開かない
+        XCTAssertEqual(fixture.coordinator.begin(), .unavailable)
     }
 
     func testInterruptedReplacementCopiesAndDisablesRetry() async throws {
@@ -124,7 +133,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
             defer { fixture.cleanUp() }
             fixture.replacer.forcedOutcome = replaceOutcome
             fixture.deliver(text: "さいとうです", field: FakeField(text: "さいとうです"))
-            let draft = try XCTUnwrap(fixture.coordinator.begin())
+            let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
 
             let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
 
@@ -132,10 +141,8 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
             XCTAssertEqual(fixture.replacer.calls.count, 1)
             // 置き換えの手順はクリップボードを元に戻すので、必ずコピーし直す
             XCTAssertEqual(fixture.replacer.copies, ["斎藤です"], "\(replaceOutcome)")
-            // 欄は途中まで消えていて、履歴は直した文なので、直した文から始めてコピーだけにする
-            let next = try XCTUnwrap(fixture.coordinator.begin())
-            XCTAssertEqual(next.originalText, "斎藤です", "\(replaceOutcome)")
-            XCTAssertEqual(next.decision, .copyOnly(.alreadyCorrected), "\(replaceOutcome)")
+            // 途中で止めてコピーした後も、同じ入力ではもう開かない
+            XCTAssertEqual(fixture.coordinator.begin(), .unavailable, "\(replaceOutcome)")
         }
     }
 
@@ -144,7 +151,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         defer { fixture.cleanUp() }
         try fixture.settings.saveEntry(writtenForm: "西藤", readings: ["にしふじ"], category: .person)
         fixture.deliver(text: "さいとうです", field: nil)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
 
         let outcome = await fixture.coordinator.confirm(
             draft, corrected: "斎藤です", register: [newWord("斎藤", reading: "にしふじ")])
@@ -159,7 +166,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         // 読みのない「サイトウ」も、照合ではカナの正式表記を読み「さいとう」として使う
         try fixture.settings.saveEntry(writtenForm: "サイトウ", readings: [], category: .person)
         fixture.deliver(text: "斉藤です", field: nil)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
 
         let outcome = await fixture.coordinator.confirm(
             draft, corrected: "斎藤です", register: [newWord("斎藤", reading: "さいとう")])
@@ -173,7 +180,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         defer { fixture.cleanUp() }
         try fixture.settings.saveEntry(writtenForm: "斎藤", readings: ["さいとう"], category: .person)
         fixture.deliver(text: "東京です", field: nil)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
 
         // 読み「とうきょう」はぶつからないが、正式表記「サイトウ」から増える読み「さいとう」がぶつかる
         let outcome = await fixture.coordinator.confirm(
@@ -190,7 +197,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         try fixture.settings.saveEntry(writtenForm: "斎藤", readings: ["そん"], category: .person)
         let entry = try XCTUnwrap(fixture.settings.entries.first)
         fixture.deliver(text: "さいとうです", field: nil)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         let suggestion = HaasDictionarySuggestion(
             id: 0, kind: .addReading(entryID: entry.id), before: "さいとう", writtenForm: "斎藤", reading: "さいとう")
         // ポップアップを開いている間に、辞書の画面で同じ項目を改名した
@@ -209,7 +216,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         try fixture.settings.saveEntry(writtenForm: "早乙女", readings: ["さおとめ"], category: .person)
         let existing = try XCTUnwrap(fixture.settings.entries.first)
         fixture.deliver(text: "かつらぎとそうとめとはーす", field: nil)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         let selected = [
             newWord("葛城", reading: "かつらぎ"),
             HaasDictionarySuggestion(
@@ -238,7 +245,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         defer { fixture.cleanUp() }
         try fixture.settings.saveEntry(writtenForm: "斎藤", readings: ["さいとう"], category: .person)
         fixture.deliver(text: "さいとうです", field: FakeField(text: "さいとうです"))
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
 
         let outcome = await fixture.coordinator.confirm(
             draft, corrected: "斎藤です", register: [newWord("斎藤", reading: "さいとう")])
@@ -254,7 +261,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let row = try fixture.addHistory(text: "さいとうです")
         let field = FakeField(text: "さいとうです")
         fixture.deliver(text: "さいとうです", field: field, transcriptionID: row.id)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
 
         let outcome = await fixture.coordinator.confirm(
             draft, corrected: " \n　", register: [newWord("斎藤", reading: "さいとう")])
@@ -274,7 +281,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         // 1文字消した直後に、利用者が文字を選んだ状態にする
         field.selectAfterBackspaces = 1
         fixture.deliver(text: "さいとうです", field: field)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .replaceAutomatically(deleteCount: 6))
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
@@ -294,7 +301,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         // Backspace の後、2回読むまでは前の中身を返す (ブラウザなど)
         field.staleReadsAfterBackspace = 2
         fixture.deliver(text: "さいとうです", field: field)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .replaceAutomatically(deleteCount: 6))
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
@@ -310,7 +317,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let field = FakeField(text: "前の文。さいとうです")
         field.staleReadsAfterBackspace = .max
         fixture.deliver(text: "さいとうです", field: field)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
 
@@ -326,7 +333,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         // 文字数の上限で貼り付けが無視され、欄は元から「はい」で終わっている
         let field = FakeField(text: "はい")
         fixture.deliver(text: "はい", field: field, baseline: .some(.readable(textBeforeInsertion: "はい", textAfterInsertion: "")))
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "いいえ", register: [])
@@ -343,7 +350,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let field = FakeField(text: "前はい", after: "後")
         fixture.deliver(
             text: "はい", field: field, baseline: .some(.readable(textBeforeInsertion: "前", textAfterInsertion: "はい後")))
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .copyOnly(.textMismatch))
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "いいえ", register: [])
@@ -363,7 +370,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let field = FakeField(text: "か" + inserted)
         fixture.deliver(
             text: inserted, field: field, baseline: .some(.readable(textBeforeInsertion: "か", textAfterInsertion: "")))
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .copyOnly(.characterBoundary))
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "です", register: [])
@@ -380,16 +387,16 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let field = FakeField(text: "か\u{3099}です")
         field.readable = false
         fixture.deliver(text: "\u{3099}です", field: field)
-        XCTAssertEqual(fixture.coordinator.begin()?.decision, .copyOnly(.characterBoundary))
+        XCTAssertEqual(fixture.coordinator.begin().draft?.decision, .copyOnly(.characterBoundary))
     }
 
-    func testRecorrectionStartingWithCombiningMarkOnlyCopies() async throws {
+    func testReplacementStartingWithCombiningMarkIsNotReopened() async throws {
         let fixture = try CorrectionFixture()
         defer { fixture.cleanUp() }
         let field = FakeField(text: "かさいとう")
         fixture.deliver(
             text: "さいとう", field: field, baseline: .some(.readable(textBeforeInsertion: "か", textAfterInsertion: "")))
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .replaceAutomatically(deleteCount: 4))
 
         // 直した文が結合の濁点で始まり、前の「か」とつながって「がです」になる
@@ -398,10 +405,8 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(outcome.result, .replaced)
         XCTAssertEqual(field.text, "か" + corrected)
 
-        // 直した文を続けて直すときも同じ規則で判定し、「か」ごと消さない
-        let next = try XCTUnwrap(fixture.coordinator.begin())
-        XCTAssertEqual(next.originalText, corrected)
-        XCTAssertEqual(next.decision, .copyOnly(.characterBoundary))
+        // 直し終えたので開かない。「か」とつながった直した文を、続けて消すことはない
+        XCTAssertEqual(fixture.coordinator.begin(), .unavailable)
     }
 
     func testReadableFieldWithoutInsertionRecordOnlyCopies() throws {
@@ -409,7 +414,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
             let fixture = try CorrectionFixture()
             defer { fixture.cleanUp() }
             fixture.deliver(text: "さいとうです", field: FakeField(text: "前の文。さいとうです"), baseline: baseline)
-            XCTAssertEqual(fixture.coordinator.begin()?.decision, .copyOnly(.insertionUnverified), "\(String(describing: baseline))")
+            XCTAssertEqual(fixture.coordinator.begin().draft?.decision, .copyOnly(.insertionUnverified), "\(String(describing: baseline))")
         }
     }
 
@@ -420,7 +425,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         // 1回目の Backspace で、カーソルの後ろの文字まで消える
         field.alsoDeleteAfterAtBackspace = 1
         fixture.deliver(text: "さいとうです", field: field)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .replaceAutomatically(deleteCount: 6))
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
@@ -438,7 +443,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let field = FakeField(text: "前の文。(あ", after: ")")
         field.deletesClosingPair = true
         fixture.deliver(text: "(あ", field: field)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .replaceAutomatically(deleteCount: 2))
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "(い", register: [])
@@ -458,7 +463,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         fixture.deliver(text: "さいとうです", field: field)
         // ⌘ を押した後、入力先の遅れた処理が既存の文を選ぶ
         fixture.replacer.onCommandDown = { field.selectionLength = 1 }
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
 
@@ -474,7 +479,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let field = FakeField(text: "さいとうです")
         field.readable = false
         fixture.deliver(text: "さいとうです", field: field)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(draft.decision, .replaceAfterConfirmation(deleteCount: 6))
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
@@ -490,7 +495,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
             let fixture = try CorrectionFixture()
             defer { fixture.cleanUp() }
             fixture.deliver(text: "さいとうです", field: FakeField(text: "さいとうです"))
-            XCTAssertNotNil(fixture.coordinator.begin())
+            XCTAssertNotNil(fixture.coordinator.begin().draft)
             fixture.coordinator.cancel()
             XCTAssertEqual(fixture.returnTarget.activateCount, 1)
         }
@@ -499,7 +504,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
             let fixture = try CorrectionFixture()
             defer { fixture.cleanUp() }
             fixture.deliver(text: "さいとうです", field: FakeField(text: "さいとうです"))
-            let draft = try XCTUnwrap(fixture.coordinator.begin())
+            let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
             _ = await fixture.coordinator.confirm(draft, corrected: "さいとうです", register: [])
             XCTAssertEqual(fixture.returnTarget.activateCount, 1)
         }
@@ -508,7 +513,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
             let fixture = try CorrectionFixture()
             defer { fixture.cleanUp() }
             fixture.deliver(text: "さいとうです", field: nil)
-            let draft = try XCTUnwrap(fixture.coordinator.begin())
+            let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
             let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
             XCTAssertEqual(outcome.result, .copied(copiedMessage))
             XCTAssertEqual(fixture.returnTarget.activateCount, 1)
@@ -518,7 +523,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
             let fixture = try CorrectionFixture()
             defer { fixture.cleanUp() }
             try fixture.addHistory(text: "さいとうです")
-            let draft = try XCTUnwrap(fixture.coordinator.begin())
+            let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
             XCTAssertEqual(draft.decision, .copyOnly(.noRecord))
             _ = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
             XCTAssertEqual(fixture.returnTarget.activateCount, 1)
@@ -530,7 +535,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         defer { fixture.cleanUp() }
         let row = try fixture.addHistory(text: "さいとうです")
         fixture.deliver(text: "さいとうです", field: FakeField(text: "さいとうです"), transcriptionID: row.id)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         fixture.context.insert(Transcription(text: "保存に失敗した録音", duration: 1))
         XCTAssertTrue(fixture.context.hasChanges)
 
@@ -551,7 +556,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let row = try fixture.addHistory(text: "さいとうです")
         fixture.replacer.copyResult = false
         fixture.deliver(text: "さいとうです", field: nil, transcriptionID: row.id)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
 
         let outcome = await fixture.coordinator.confirm(
             draft, corrected: "斎藤です", register: [newWord("斎藤", reading: "さいとう")])
@@ -560,9 +565,35 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
             outcome.result, .failed("直した文をコピーできませんでした。もう一度開くと、直した文から始められます"))
         XCTAssertEqual(fixture.settings.entries.map(\.writtenForm), ["斎藤"])
         XCTAssertEqual(row.enhancedText, "斎藤です")
-        let next = try XCTUnwrap(fixture.coordinator.begin())
+        // コピーできなかった直した文は、直せる時間を過ぎても直した文から始められる
+        fixture.now = fixture.now.addingTimeInterval(600)
+        let next = try XCTUnwrap(fixture.coordinator.begin().draft)
         XCTAssertEqual(next.originalText, "斎藤です")
         XCTAssertEqual(next.decision, .copyOnly(.alreadyCorrected))
+    }
+
+    func testHistoryCopyFailureKeepsCorrectedTextAfterRowIsDeleted() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        let row = try fixture.addHistory(text: "さいとうです")
+        fixture.replacer.copyResult = false
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
+        XCTAssertEqual(draft.decision, .copyOnly(.noRecord))
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
+        XCTAssertEqual(outcome.result, .failed(HaasCorrectionCoordinator.copyFailedMessage))
+
+        // 履歴の行を消し、直せる時間も過ぎた。それでも直した文からコピーをやり直せる
+        fixture.context.delete(row)
+        try fixture.context.save()
+        fixture.now = fixture.now.addingTimeInterval(600)
+        let retry = try XCTUnwrap(fixture.coordinator.begin().draft)
+        XCTAssertEqual(retry.originalText, "斎藤です")
+        XCTAssertEqual(retry.decision, .copyOnly(.alreadyCorrected))
+
+        fixture.replacer.copyResult = true
+        let copied = await fixture.coordinator.confirm(retry, corrected: "斎藤です", register: [])
+        XCTAssertEqual(copied.result, .copied(copiedMessage))
+        XCTAssertEqual(fixture.coordinator.begin(), .nothingToCorrect)
     }
 
     func testSameTextRetriesCopyAfterCopyFailure() async throws {
@@ -571,14 +602,14 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let row = try fixture.addHistory(text: "さいとうです")
         fixture.replacer.copyResult = false
         fixture.deliver(text: "さいとうです", field: nil, transcriptionID: row.id)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         _ = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [newWord("斎藤", reading: "さいとう")])
         // 書き戻しをやり直さないことを確かめるため、履歴を別の文にしておく
         row.enhancedText = "履歴の画面で直した文"
         try fixture.context.save()
 
         fixture.replacer.copyResult = true
-        let retry = try XCTUnwrap(fixture.coordinator.begin())
+        let retry = try XCTUnwrap(fixture.coordinator.begin().draft)
         let outcome = await fixture.coordinator.confirm(
             retry, corrected: "斎藤です", register: [newWord("斎藤", reading: "さいとう")])
 
@@ -588,10 +619,8 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.settings.entries.map(\.writtenForm), ["斎藤"])
         XCTAssertEqual(row.enhancedText, "履歴の画面で直した文")
 
-        // コピーできた後は、同じ文の確定は何もしない
-        let after = try XCTUnwrap(fixture.coordinator.begin())
-        let unchanged = await fixture.coordinator.confirm(after, corrected: "斎藤です", register: [])
-        XCTAssertEqual(unchanged.result, .unchanged)
+        // コピーできた後は、同じ入力ではもう開かない
+        XCTAssertEqual(fixture.coordinator.begin(), .unavailable)
         XCTAssertEqual(fixture.replacer.copies.count, 2)
     }
 
@@ -599,7 +628,7 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let fixture = try CorrectionFixture()
         defer { fixture.cleanUp() }
         fixture.deliver(text: "さいとうです", field: FakeField(text: "さいとうです"))
-        XCTAssertNotNil(fixture.coordinator.begin())
+        XCTAssertNotNil(fixture.coordinator.begin().draft)
         let other = HaasCorrectionDraft(originalText: "別の文", transcriptionID: nil, decision: .replaceAutomatically(deleteCount: 3))
 
         let outcome = await fixture.coordinator.confirm(other, corrected: "斎藤です", register: [])
@@ -614,9 +643,9 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         defer { fixture.cleanUp() }
         let field = FakeField(text: "さいとうです")
         fixture.deliver(text: "さいとうです", field: field)
-        let draft = try XCTUnwrap(fixture.coordinator.begin())
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
         fixture.idle = false
-        XCTAssertNil(fixture.coordinator.begin())
+        XCTAssertEqual(fixture.coordinator.begin(), .unavailable)
 
         let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
 
@@ -631,14 +660,110 @@ final class HaasCorrectionCoordinatorTests: XCTestCase {
         let fixture = try CorrectionFixture()
         defer { fixture.cleanUp() }
         fixture.deliver(text: "さいとうです", field: nil)
-        XCTAssertNotNil(fixture.coordinator.begin())
+        XCTAssertNotNil(fixture.coordinator.begin().draft)
         XCTAssertEqual(
             fixture.coordinator.suggestions(for: "斎藤です"),
             HaasCorrectionSuggester.suggestions(original: "さいとうです", corrected: "斎藤です", entries: []))
     }
 
+    func testUnchangedEmptyOrCancelledCorrectionCanReopen() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        fixture.deliver(text: "さいとうです", field: FakeField(text: "さいとうです"))
+
+        let first = try XCTUnwrap(fixture.coordinator.begin().draft)
+        let unchanged = await fixture.coordinator.confirm(first, corrected: "さいとうです", register: [])
+        XCTAssertEqual(unchanged.result, .unchanged)
+
+        let second = try XCTUnwrap(fixture.coordinator.begin().draft)
+        XCTAssertEqual(second, first)
+        let empty = await fixture.coordinator.confirm(second, corrected: " ", register: [])
+        XCTAssertEqual(empty.result, .failed(HaasCorrectionCoordinator.emptyMessage))
+
+        XCTAssertEqual(fixture.coordinator.begin().draft, first)
+        fixture.coordinator.cancel()
+
+        XCTAssertEqual(fixture.coordinator.begin().draft, first)
+    }
+
+    func testTimeLimitIsCheckedOnlyWhenOpening() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        let field = FakeField(text: "さいとうです")
+        fixture.deliver(text: "さいとうです", field: field)
+
+        // 既定は 120 秒。ちょうどなら開ける
+        fixture.now = fixture.now.addingTimeInterval(120)
+        XCTAssertNotNil(fixture.coordinator.begin().draft)
+        fixture.coordinator.cancel()
+        // 1 秒でも過ぎたら開かない
+        fixture.now = fixture.now.addingTimeInterval(1)
+        XCTAssertEqual(fixture.coordinator.begin(), .unavailable)
+
+        // 設定で延ばせば開ける。開いた後に時間が過ぎても、確定はそのまま行う
+        fixture.defaults.set(300, forKey: HaasCorrectionSettingsKeys.timeLimitSeconds)
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
+        fixture.now = fixture.now.addingTimeInterval(600)
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
+        XCTAssertEqual(outcome.result, .replaced)
+        XCTAssertEqual(field.text, "斎藤です")
+    }
+
+    func testNewRecordingAfterClosingCanBeCorrected() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        fixture.deliver(text: "さいとうです", field: nil)
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "斎藤です", register: [])
+        XCTAssertEqual(outcome.result, .copied(copiedMessage))
+        XCTAssertEqual(fixture.coordinator.begin(), .unavailable)
+
+        fixture.deliver(text: "とうきょうです", field: nil)
+        let next = try XCTUnwrap(fixture.coordinator.begin().draft)
+        XCTAssertEqual(next.originalText, "とうきょうです")
+    }
+
+    func testHistoryRowPastTimeLimitOrCorrectedIsUnavailable() async throws {
+        let fixture = try CorrectionFixture()
+        defer { fixture.cleanUp() }
+        try fixture.addHistory(text: "古い文", timestamp: fixture.now.addingTimeInterval(-121))
+        XCTAssertEqual(fixture.coordinator.begin(), .unavailable)
+
+        let latest = try fixture.addHistory(text: "新しい文", timestamp: fixture.now.addingTimeInterval(-120))
+        let draft = try XCTUnwrap(fixture.coordinator.begin().draft)
+        XCTAssertEqual(draft.transcriptionID, latest.id)
+        let outcome = await fixture.coordinator.confirm(draft, corrected: "新しい文。", register: [])
+        XCTAssertEqual(outcome.result, .copied(copiedMessage))
+
+        // 直してコピーした行は、直せる時間の内でも開かない
+        XCTAssertEqual(fixture.coordinator.begin(), .unavailable)
+    }
+
+    func testStoredTimeLimitFallsBackToDefault() throws {
+        let suite = "HaasCorrectionTimeLimitTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = HaasCorrectionSettingsKeys.timeLimitSeconds
+
+        XCTAssertEqual(HaasCorrectionCoordinator.storedTimeLimit(in: defaults), 120)
+        defaults.set(0, forKey: key)
+        XCTAssertEqual(HaasCorrectionCoordinator.storedTimeLimit(in: defaults), 120)
+        defaults.set(-30, forKey: key)
+        XCTAssertEqual(HaasCorrectionCoordinator.storedTimeLimit(in: defaults), 120)
+        defaults.set(300, forKey: key)
+        XCTAssertEqual(HaasCorrectionCoordinator.storedTimeLimit(in: defaults), 300)
+    }
+
     private func newWord(_ form: String, reading: String) -> HaasDictionarySuggestion {
         HaasDictionarySuggestion(id: 0, kind: .newWord, before: reading, writtenForm: form, reading: reading)
+    }
+}
+
+extension HaasCorrectionStart {
+    /// .ready なら、その draft
+    var draft: HaasCorrectionDraft? {
+        guard case let .ready(draft) = self else { return nil }
+        return draft
     }
 }
 
@@ -654,13 +779,21 @@ private final class CorrectionFixture {
     let replacer = FakeReplacer()
     let returnTarget = FakeTarget(field: FakeField(text: ""))
     var idle = true
+    /// coordinator が見る今の時刻。deliver と addHistory の既定の時刻にも使う
+    var now = Date()
     private(set) var focusWaits = 0
+    private(set) var returnTargetCaptures = 0
 
     lazy var coordinator = HaasCorrectionCoordinator(
         delivery: provider, monitor: watcher, replacer: replacer, settings: settings, modelContext: context,
         isIdle: { [unowned self] in self.idle },
-        captureReturnTarget: { [unowned self] in self.returnTarget },
-        waitForFocus: { [unowned self] _ in self.focusWaits += 1 })
+        captureReturnTarget: { [unowned self] in
+            self.returnTargetCaptures += 1
+            return self.returnTarget
+        },
+        waitForFocus: { [unowned self] _ in self.focusWaits += 1 },
+        now: { [unowned self] in self.now },
+        timeLimit: { [unowned self] in HaasCorrectionCoordinator.storedTimeLimit(in: self.defaults) })
 
     init() throws {
         suite = "HaasCorrectionCoordinatorTests.\(UUID().uuidString)"
@@ -672,7 +805,7 @@ private final class CorrectionFixture {
         container.mainContext.autosaveEnabled = false
     }
 
-    /// 配信の記録を作る。field が nil なら入力先なし。
+    /// 配信の記録を作る。入力し終えた時刻は now。field が nil なら入力先なし。
     /// baseline を渡さなければ、今の欄から入れた文を除いたものを、貼る前の欄として記録する
     @discardableResult
     func deliver(
@@ -693,14 +826,14 @@ private final class CorrectionFixture {
         }
         provider.lastDeliveredInput = HaasDeliveredInput(
             sessionID: UUID(), transcriptionID: transcriptionID, text: text, allSegmentsPosted: posted,
-            target: target, watchToken: watcher.startWatching(), insertionBaseline: recorded)
+            target: target, watchToken: watcher.startWatching(), insertionBaseline: recorded, deliveredAt: now)
         return target
     }
 
     @discardableResult
-    func addHistory(text: String, enhancedText: String? = nil, timestamp: Date = Date()) throws -> Transcription {
+    func addHistory(text: String, enhancedText: String? = nil, timestamp: Date? = nil) throws -> Transcription {
         let row = Transcription(text: text, duration: 1, enhancedText: enhancedText, transcriptionStatus: .completed)
-        row.timestamp = timestamp
+        row.timestamp = timestamp ?? now
         context.insert(row)
         try context.save()
         return row

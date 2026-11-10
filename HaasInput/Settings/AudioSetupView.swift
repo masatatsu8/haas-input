@@ -8,6 +8,7 @@ struct AudioSetupView: View {
     @ObservedObject private var playbackController = PlaybackController.shared
     @State private var microphoneSourceBeforePriorityOrder: MicrophoneSourceSelection = .systemDefault
     @State private var refreshIconRotation = 0.0
+    @Environment(\.haasTextScale) private var textScale
 
     var body: some View {
         Form {
@@ -159,9 +160,9 @@ struct AudioSetupView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text("\(prioritizedDevice.priority + 1)")
-                    .font(.body.monospacedDigit())
+                    .font(HaasFont.font(.body, scale: textScale).monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .frame(width: 22, alignment: .leading)
+                    .frame(width: 22 * textScale, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(prioritizedDevice.name)
@@ -170,7 +171,7 @@ struct AudioSetupView: View {
 
                     if !isAvailable {
                         Text("未接続")
-                            .font(.caption)
+                            .haasFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -179,7 +180,7 @@ struct AudioSetupView: View {
 
                 if isActive {
                     Label("使用中", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
+                        .haasFont(.caption)
                         .foregroundStyle(.secondary)
                         .labelStyle(.titleAndIcon)
                 }

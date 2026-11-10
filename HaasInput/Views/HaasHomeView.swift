@@ -10,6 +10,7 @@ struct HaasHomeView: View {
     @ObservedObject private var delivery: HaasInputDelivery
     @ObservedObject private var permissions: HaasPermissions
     @Query private var recent: [Transcription]
+    @Environment(\.haasTextScale) private var textScale
 
     init(app: HaasAppModel, engine: HaasEngine, shortcuts: RecordingShortcutManager) {
         self.app = app
@@ -27,7 +28,7 @@ struct HaasHomeView: View {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("声を、そのまま入力へ")
-                        .font(.largeTitle.bold())
+                        .haasFont(.largeTitle, weight: .bold)
                     Text("日本語の音声をこのMacで認識し、確定した区間からカーソル位置へ入力します。")
                         .foregroundStyle(.secondary)
                 }
@@ -36,7 +37,7 @@ struct HaasHomeView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
                             Label(engine.recordingState.displayName, systemImage: engine.recordingState == .recording ? "waveform" : "mic")
-                                .font(.headline)
+                                .haasFont(.headline)
                             Spacer()
                             Button(recordingButtonTitle) {
                                 Task {
@@ -53,12 +54,12 @@ struct HaasHomeView: View {
                             Text("録音ショートカット")
                             Spacer()
                             Text(ShortcutStore.shortcut(for: .primaryRecording)?.displayString ?? "未設定")
-                                .font(.headline.monospaced())
+                                .haasFont(.headline, design: .monospaced)
                             Text(shortcuts.primaryRecordingShortcutMode.displayName)
                                 .foregroundStyle(.secondary)
                         }
                         Text("入力先の欄を選んでからショートカットで録音してください。この画面から始めた録音は、認識結果をコピーして使えます。")
-                            .font(.callout)
+                            .haasFont(.callout)
                             .foregroundStyle(.secondary)
                         if let error = engine.errorMessage {
                             Text(error).foregroundStyle(.red).textSelection(.enabled)
@@ -94,7 +95,7 @@ struct HaasHomeView: View {
                                         Spacer()
                                         Text(item.historyStatusLabel)
                                     }
-                                    .font(.caption)
+                                    .haasFont(.caption)
                                     .foregroundStyle(.secondary)
                                     Text(verbatim: item.preferredHistoryText)
                                         .lineLimit(2)
@@ -111,7 +112,7 @@ struct HaasHomeView: View {
                 }
             }
             .padding(26)
-            .frame(maxWidth: 800)
+            .frame(maxWidth: 800 * textScale)
             .frame(maxWidth: .infinity)
         }
     }
@@ -137,9 +138,9 @@ struct HaasPermissionView: View {
                     if !permissions.microphoneGranted {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("マイク").font(.headline)
+                                Text("マイク").haasFont(.headline)
                                 Text("音声を認識するために必要です。")
-                                    .font(.callout).foregroundStyle(.secondary)
+                                    .haasFont(.callout).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Button("マイクの許可を確認", action: permissions.requestMicrophone)
@@ -148,16 +149,16 @@ struct HaasPermissionView: View {
                     if !permissions.accessibilityGranted {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("アクセシビリティ").font(.headline)
+                                Text("アクセシビリティ").haasFont(.headline)
                                 Text("ショートカットと、ほかのアプリへの文字入力に使います。")
-                                    .font(.callout).foregroundStyle(.secondary)
+                                    .haasFont(.callout).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Button("システム設定を開く", action: permissions.requestAccessibility)
                         }
                     }
                     Text("許可を変更したら、このアプリへ戻ってください。")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .haasFont(.caption).foregroundStyle(.secondary)
                 }
                 .padding(8)
             }

@@ -7,7 +7,7 @@ struct HaasModelPreparationView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: symbol)
-                .font(.callout.weight(.medium))
+                .haasFont(.callout, weight: .medium)
 
             if preparation.isWorking {
                 if let progress = preparation.progress,
@@ -16,7 +16,7 @@ struct HaasModelPreparationView: View {
                 {
                     ProgressView(value: Double(progress.completedBytes), total: Double(progress.totalBytes))
                     Text("\(formattedBytes(progress.completedBytes)) / \(formattedBytes(progress.totalBytes))")
-                        .font(.caption)
+                        .haasFont(.caption)
                         .foregroundStyle(.secondary)
                 } else {
                     ProgressView()
@@ -26,12 +26,12 @@ struct HaasModelPreparationView: View {
 
             if case .failed(let message) = preparation.state {
                 Text(message)
-                    .font(.caption)
+                    .haasFont(.caption)
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             } else if !preparation.isReady {
                 Text("必要なモデルが見つからない場合は、約 0.66 GB をダウンロードします。準備後の音声認識は Mac 内で処理します。")
-                    .font(.caption)
+                    .haasFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -39,7 +39,7 @@ struct HaasModelPreparationView: View {
                 if preparation.isWorking {
                     if case .cancelled = preparation.state {
                         Text("キャンセルしています…")
-                            .font(.caption)
+                            .haasFont(.caption)
                             .foregroundStyle(.secondary)
                     } else {
                         Button("キャンセル", action: preparation.cancel)

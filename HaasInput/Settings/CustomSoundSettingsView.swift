@@ -6,6 +6,7 @@ struct CustomSoundSettingsView: View {
     @State private var showingAlert = false
     @State private var alertTitle = ""
     @State private var alertMessage = ""
+    @Environment(\.haasTextScale) private var textScale
 
     private enum SoundMenuSelection: Hashable {
         case none
@@ -52,7 +53,7 @@ struct CustomSoundSettingsView: View {
             }
             .labelsHidden()
             .pickerStyle(.menu)
-            .frame(width: 116, alignment: .trailing)
+            .frame(width: 116 * textScale, alignment: .trailing)
             .fixedSize()
             .help("操作音を選ぶ")
 
